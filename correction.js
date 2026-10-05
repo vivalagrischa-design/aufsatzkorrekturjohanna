@@ -102,11 +102,11 @@ export async function wordReport(report) {
   const total = totals(report);
   const cell = text => new TableCell({ children: [p(String(text))] });
   const table = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
-    new TableRow({ tableHeader: true, children: ['Kriterium', 'Beurteilung und Beleg', 'Punkte'].map(cell) }),
+    new TableRow({ tableHeader: true, children: ['Bewertungskriterium', 'Beurteilung und Beleg', 'Punkte'].map(cell) }),
     ...report.criteria.map(c => new TableRow({ children: [cell(c.name), cell(`${c.assessment}\n${c.evidence}`), cell(c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`)] })),
   ] });
   const feedbackLine = x => p(`${x.area}: ${x.aspect} [Beleg: «${x.evidence}»]`);
-  const children = [new Paragraph({ text: 'Korrekturvorschlag · Deutsch', heading: HeadingLevel.TITLE }), p(report.title), p('KI-Vorschlag – abschliessende Prüfung und Bewertung durch die Lehrperson.'), p(`Beurteilungsstrenge: ${report.assessment_strictness} / 5`), h('Gesamtbeurteilung'), ...lines(report.summary), ...(total ? [p(`Gesamtpunkte: ${total.earned} / ${total.maximum}`)] : []), p(report.grade === null ? 'Keine Note berechnet.' : `Notenvorschlag: ${report.grade}`), p(report.grade_reason), h('Bewertung nach Kriterien'), table, h('Sprachliche Korrekturen'), ...report.corrections.flatMap(c => [p(`${c.category}: ${c.original}`), p(`Vorschlag: ${c.suggestion}`), p(c.explanation)]), h('Stärken'), ...report.strengths.map(feedbackLine), h('Entwicklungsfelder'), ...report.weaknesses.map(feedbackLine), h('Nächste Schritte und Tipps'), ...report.next_steps.map(x => p(`${x.focus}: ${x.tip}`)), h('Hinweise zur Prüfung'), ...report.uncertainties.map(p), ...(report.corrected_text ? [h('Sprachlich korrigierter Aufsatz'), ...lines(report.corrected_text)] : []), h('Original / Transkription'), ...lines(report.original_text)];
+  const children = [new Paragraph({ text: 'Korrekturvorschlag · Deutsch', heading: HeadingLevel.TITLE }), p(report.title), p('KI-Vorschlag – abschliessende Prüfung und Bewertung durch die Lehrperson.'), p(`Beurteilungsstrenge: ${report.assessment_strictness} / 5`), h('Gesamtbeurteilung'), ...lines(report.summary), ...(total ? [p(`Gesamtpunkte: ${total.earned} / ${total.maximum}`)] : []), p(report.grade === null ? 'Keine Note berechnet.' : `Notenvorschlag: ${report.grade}`), p(report.grade_reason), h('Beurteilung nach Bewertungskriterien'), table, h('Sprachliche Korrekturen'), ...report.corrections.flatMap(c => [p(`${c.category}: ${c.original}`), p(`Vorschlag: ${c.suggestion}`), p(c.explanation)]), h('Stärken'), ...report.strengths.map(feedbackLine), h('Entwicklungsfelder'), ...report.weaknesses.map(feedbackLine), h('Nächste Schritte und Tipps'), ...report.next_steps.map(x => p(`${x.focus}: ${x.tip}`)), h('Hinweise zur Prüfung'), ...report.uncertainties.map(p), ...(report.corrected_text ? [h('Sprachlich korrigierter Aufsatz'), ...lines(report.corrected_text)] : []), h('Original / Transkription'), ...lines(report.original_text)];
   return Packer.toBuffer(new Document({ styles: { default: { document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { line: 276 } } } } }, sections: [{ children }] }));
 }
 
@@ -118,7 +118,7 @@ export async function teacherWordReport(report) {
   const total = totals(report);
   const cell = text => new TableCell({ children: [p(String(text))] });
   const table = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
-    new TableRow({ tableHeader: true, children: ['Kriterium', 'Punkte', 'Begründung und Textbeleg'].map(cell) }),
+    new TableRow({ tableHeader: true, children: ['Bewertungskriterium', 'Punkte', 'Begründung und Textbeleg'].map(cell) }),
     ...report.criteria.map(c => new TableRow({ children: [cell(c.name), cell(c.earned === null ? 'Nicht beurteilbar' : `${c.earned} / ${c.maximum}`), cell(`${c.assessment}${c.evidence ? `\nBeleg: «${c.evidence}»` : ''}`)] })),
   ] });
   const feedback = item => p(`${item.area}: ${item.aspect}\nTextbeleg: «${item.evidence}»`);
@@ -130,7 +130,7 @@ export async function teacherWordReport(report) {
     h('Gesamtbeurteilung'), ...lines(report.summary),
     ...(total ? [p(`Gesamtpunkte: ${total.earned} / ${total.maximum}`)] : []),
     p(report.grade === null ? 'Keine Note berechnet.' : `Notenvorschlag: ${report.grade}`), p(report.grade_reason),
-    h('Bewertung nach Kriterien'), table,
+    h('Beurteilung nach Bewertungskriterien'), table,
     h('Sprachliche Korrekturen'), ...report.corrections.flatMap(c => [p(`${c.category}: ${c.original}`), p(`Vorschlag: ${c.suggestion}`), p(c.explanation)]),
     h('Stärken'), ...report.strengths.map(feedback),
     h('Entwicklungsfelder'), ...report.weaknesses.map(feedback),

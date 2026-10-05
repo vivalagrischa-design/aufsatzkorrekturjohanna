@@ -27,7 +27,7 @@ function setFiles(id, files) {
 function invalidateReport() { report = null; $('result').hidden = true; }
 function updateFile(id) {
   const files = selected[id];
-  $(id + 'Name').textContent = files.length ? `${files.length} Datei${files.length === 1 ? '' : 'en'} ausgewählt · weitere hinzufügen` : (id === 'criteria' ? 'Kriterien hochladen' : 'Aufsatz hochladen');
+  $(id + 'Name').textContent = files.length ? `${files.length} Datei${files.length === 1 ? '' : 'en'} ausgewählt · weitere hinzufügen` : (id === 'criteria' ? 'Bewertungskriterien hochladen' : 'Aufsatz hochladen');
   $(id + 'Zone').classList.toggle('ready', files.length > 0);
   document.querySelector(`[data-clear="${id}"]`).hidden = !files.length;
   const list = $(id + 'List'); list.replaceChildren();
@@ -161,7 +161,7 @@ function reportHtml(r) {
   return `<h3>${escapeHtml(r.title)}</h3><p class="notice">KI-Vorschlag: Bitte Belege, Transkription und Bewertung vor der Verwendung prüfen.</p>${total || r.grade !== null ? `<div class="metrics">${total ? `<div class="metric"><strong>${total.earned} / ${total.maximum}</strong><span>Gesamtpunkte</span></div>` : ''}${r.grade !== null ? `<div class="metric"><strong>${escapeHtml(r.grade)}</strong><span>Notenvorschlag nach Raster</span></div>` : ''}</div>` : ''}
   ${block('Gesamtbeurteilung', `<p>${escapeHtml(r.summary)}</p><p class="notice">${escapeHtml(r.grade_reason)}</p>`)}
   ${r.uncertainties.length ? block('Bitte prüfen', list(r.uncertainties), 'uncertainties') : ''}
-  ${block('Bewertung nach deinen Kriterien', r.criteria.length ? `<div class="table-wrap"><table><thead><tr><th>Kriterium</th><th>Beurteilung und Textbeleg</th><th>Punkte</th></tr></thead><tbody>${r.criteria.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong></td><td><p>${escapeHtml(c.assessment)}</p><small>${escapeHtml(c.evidence)}</small></td><td>${c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`}</td></tr>`).join('')}</tbody></table></div>` : '<p>Die Dokumente erlauben keine Bewertung.</p>')}
+  ${block('Beurteilung nach deinen Bewertungskriterien', r.criteria.length ? `<div class="table-wrap"><table><thead><tr><th>Bewertungskriterium</th><th>Beurteilung und Textbeleg</th><th>Punkte</th></tr></thead><tbody>${r.criteria.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong></td><td><p>${escapeHtml(c.assessment)}</p><small>${escapeHtml(c.evidence)}</small></td><td>${c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`}</td></tr>`).join('')}</tbody></table></div>` : '<p>Die Dokumente erlauben keine Bewertung.</p>')}
   ${block('Sprachliche Korrekturen', r.corrections.length ? r.corrections.map(c => `<div class="correction-item"><span class="category">${escapeHtml(c.category)}</span><p class="old">Original: ${escapeHtml(c.original)}</p><p class="new">Vorschlag: ${escapeHtml(c.suggestion)}</p><small>${escapeHtml(c.explanation)}</small></div>`).join('') : '<p>Keine konkreten sprachlichen Korrekturen aufgeführt.</p>')}
   ${block('Stärken', feedbackList(r.strengths))}${block('Entwicklungsfelder', feedbackList(r.weaknesses))}${block('Nächste Schritte und Tipps', `<ul>${r.next_steps.map(item => `<li><strong>${escapeHtml(item.focus)}:</strong> ${escapeHtml(item.tip)}</li>`).join('')}</ul>`)}
   ${block('Gewählte Beurteilungsstrenge', `<p>${escapeHtml(r.assessment_strictness)} / 5</p>`)}
@@ -175,7 +175,7 @@ function download(blob, filename) { const url = URL.createObjectURL(blob); const
   $('downloadAssessment').disabled = true;
   try {
     const templates = selected.criteria.filter(file => /\.docx$/i.test(file.name));
-    if (templates.length > 1) throw new Error('Bitte nur eine Word-Vorlage als Bewertungsraster hochladen.');
+    if (templates.length > 1) throw new Error('Bitte nur eine Word-Vorlage mit Bewertungskriterien hochladen.');
     const payload = templates.length ? { report, template: await readFile(templates[0]) } : { report };
     const response = await request('/api/export', payload); download(await response.blob(), 'Beurteilung_Aufsatz.docx');
   }

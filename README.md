@@ -39,7 +39,7 @@ benötigt macOS; auf anderen Servern Text manuell einfügen oder OCR ergänzen.
 
 # Aufsatzatelier – Deutschkorrektur für Schulen
 
-Zwei Uploadfelder: Bewertungskriterien und Schüleraufsatz. Die App erstellt anhand des hochgeladenen Rasters einen Korrekturvorschlag mit Textbelegen, begründeten Sprachkorrekturen, Stärken, Lernschritten und vollständig sprachlich korrigiertem Aufsatz. Download als Word-Datei, HTML-Bericht oder PDF über den Druckdialog.
+Zwei Uploadfelder: Bewertungskriterien und Schüleraufsatz. Die App erstellt anhand der hochgeladenen Bewertungskriterien einen Korrekturvorschlag mit Textbelegen, begründeten Sprachkorrekturen, Stärken, Lernschritten und vollständig sprachlich korrigiertem Aufsatz. Download als Word-Datei, HTML-Bericht oder PDF über den Druckdialog.
 
 **Standard: echte lokale KI ohne API-Schlüssel.** Lehrpersonen brauchen nur die Webadresse und gegebenenfalls das Schulpasswort. Der Betreiber stellt einmalig die App mit einem eigenen Ollama-KI-Server bereit. Es gibt keine vorgetäuschten Korrekturen.
 
