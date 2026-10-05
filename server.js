@@ -1,3 +1,4 @@
+import { templateReport } from './template-export.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +50,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
           return send(200, await fastCorrection(body, env, fetchImpl, controller.signal));
         }
         if (url.pathname === '/api/export') {
-          const file = await wordReport(body.report);
+          const file = body.template ? await templateReport(body.template, body.report) : await wordReport(body.report);
           res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Content-Disposition': 'attachment; filename="Korrekturvorschlag.docx"' }); return res.end(file);
         }
         const now = Date.now();

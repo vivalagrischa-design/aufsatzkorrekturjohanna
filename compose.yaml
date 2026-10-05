@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      AI_PROVIDER: ollama
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: qwen3-vl:8b
+      APP_PASSWORD: ${APP_PASSWORD:?Bitte APP_PASSWORD in .env setzen}
+    depends_on:
+      - ollama
+    restart: unless-stopped
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    # Für einen NVIDIA-GPU-Server (mit NVIDIA Container Toolkit):
+    # gpus: all
+volumes:
+  ollama:

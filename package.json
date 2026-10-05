@@ -1,0 +1,19 @@
+{
+  "name": "aufsatzkorrektur-deutsch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "mammoth": "^1.11.0",
+    "jszip": "3.10.2",
+    "@xmldom/xmldom": "0.8.15"
+  }
+}
