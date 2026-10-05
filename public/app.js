@@ -162,7 +162,9 @@ function download(blob, filename) { const url = URL.createObjectURL(blob); const
 $('downloadWord').onclick = async () => {
   if (!report) return;
   $('downloadWord').disabled = true;
-  try { const response = await request('/api/export', { report }); download(await response.blob(), 'Korrekturvorschlag.docx'); }
+  try { const templates = selected.criteria.filter(file => /\.docx$/i.test(file.name));
+    if (templates.length !== 1) throw new Error('Bitte genau eine Word-Vorlage als Bewertungsraster hochladen, damit das Originalformat erhalten bleibt.');
+    const response = await request('/api/export', { report, template: await readFile(templates[0]) }); download(await response.blob(), 'Korrekturvorschlag.docx'); }
   catch (error) { status(error.message, true); }
   finally { $('downloadWord').disabled = false; }
 };
