@@ -1,3 +1,42 @@
+## Lokaler Mac Ablauf ab Version 1.4
+
+Die aktuelle Oberfläche liest Dokumente zuerst lokal und beurteilt anschliessend
+nur den geprüften Text. Der Aufsatz wird nicht nochmals vollständig ausgegeben.
+Fotos liest Apple Vision ohne automatische Sprachkorrektur; Handschrift und
+Satzzeichen müssen vor der Beurteilung mit den Originalen verglichen werden.
+
+Nach der bisherigen Installation (Node, Ollama, Poppler, npm ci):
+
+```bash
+mkdir -p bin
+xcrun swiftc -O mac-ocr.swift -o bin/mac-ocr -framework Vision -framework ImageIO
+ollama pull qwen3:4b-instruct
+bash Start.command
+```
+
+Optional in `.env`: `OLLAMA_TEXT_MODEL=qwen3:4b-instruct`. Dieses Textmodell ist
+vom früheren `OLLAMA_MODEL` für die Bildkorrektur getrennt. `Start.command` hält
+den Mac während der geöffneten App vor automatischem Leerlauf-Ruhezustand wach.
+
+Word-Raster mit einer Kriterium- und Punktespalte werden automatisch eingelesen.
+Rasterformat nach Prüfung: `Maximalpunkte | Kriterium` je Zeile; ohne Punkte
+`- | Kriterium`. Summenzeilen weglassen. Das Raster bleibt für den nächsten
+Aufsatz im Browser erhalten. Keine dauerhafte Speicherung der Schülertexte.
+
+Jedes Kriterium wird beurteilt. Visuelle Kriterien bleiben ohne Beobachtungen
+der Lehrperson offen. Es gibt ausgewählte sprachliche Korrekturen, keine
+vollständige Fehlerliste, kein Neuschreiben und keine automatische Note in diesem
+Modus. KI-Ausgaben mit fremden Kriterien, unzulässigen Punkten oder nicht im
+Original vorhandenen Zitaten werden verworfen. Inhaltliche Richtigkeit bleibt
+prüfpflichtig. Das kleinere Modell kann schwächer beurteilen als ChatGPT.
+
+Die reale OCR-Qualität, Korrekturqualität und Geschwindigkeit auf einem Mac M1
+sind noch nicht validiert. Tests nutzen simulierte Modellantworten. Vor dem
+Einsatz für eine Klasse mehrere bekannte Aufsätze vergleichen. Diese Bildlesung
+benötigt macOS; auf anderen Servern Text manuell einfügen oder OCR ergänzen.
+
+---
+
 # Aufsatzatelier – Deutschkorrektur für Schulen
 
 Zwei Uploadfelder: Bewertungskriterien und Schüleraufsatz. Die App erstellt anhand des hochgeladenen Rasters einen Korrekturvorschlag mit Textbelegen, begründeten Sprachkorrekturen, Stärken, Lernschritten und vollständig sprachlich korrigiertem Aufsatz. Download als Word-Datei, HTML-Bericht oder PDF über den Druckdialog.

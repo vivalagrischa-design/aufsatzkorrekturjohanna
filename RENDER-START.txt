@@ -1,0 +1,24 @@
+Aufsatzatelier – OpenAI-Version
+
+1. Inhalt dieses ZIPs ins GitHub-Repository hochladen und bestehende Dateien ersetzen.
+   public und test als Ordner beibehalten. KEINE echte .env-Datei hochladen.
+2. Render: New > Web Service, GitHub-Repository auswählen.
+3. Runtime: Docker (empfohlen, damit auch PDF-Seiten verarbeitet werden).
+   Root Directory: leer. Dockerfile Path: ./Dockerfile
+4. Environment:
+   AI_PROVIDER=openai
+   OPENAI_MODEL=gpt-6.1-sol
+   OPENAI_API_KEY=dein geheimer Schlüssel
+   APP_PASSWORD=dein gewähltes App-Passwort
+   NODE_ENV=production
+5. Deploy Web Service. Danach die angezeigte onrender.com-Adresse öffnen.
+   App und API laufen auf derselben Adresse; public/config.js bleibt leer.
+
+Bilder werden durch OpenAI gelesen; Word/TXT direkt. Abschrift und Raster prüfen,
+anschliessend beurteilen und als Word herunterladen. Form/Schriftbild erfordert
+Beobachtungen der Lehrperson im Zusatzfeld, da die Bewertung den geprüften Text nutzt.
+Ollama und dein Mac werden im OpenAI-Modus nicht benötigt.
+
+Tests prüfen die technische Verbindung mit simulierten Antworten.
+Keine echte API-Messung durchgeführt. Qualität, Dauer und Kosten anhand eines
+Referenzaufsatzes prüfen, bevor eine ganze Klasse verarbeitet wird.

@@ -2,14 +2,15 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { schema, instructions, fileContent, validateReport, wordReport } from './correction.js';
+import { schema, instructions, fileContent, validateReport, wordReport, validateUploads } from './correction.js';
 import { localCorrection } from './local-ai.js';
+import { extractFiles, fastCorrection, visionRead } from './fast-correction.js';
 
 const publicDir = new URL('./public/', import.meta.url);
 const safeEqual = (a, b) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 async function readBody(req) {
   const parts = []; let size = 0;
-  for await (const part of req) { size += part.length; if (size > 24 * 1024 * 1024) throw Object.assign(new Error('Die Uploads sind zu gross (maximal 8 MB pro Datei).'), { status: 413 }); parts.push(part); }
+  for await (const part of req) { size += part.length; if (size > 96 * 1024 * 1024) throw Object.assign(new Error('Die Uploads sind zu gross (maximal 64 MB insgesamt und 8 MB pro Datei).'), { status: 413 }); parts.push(part); }
   try { return JSON.parse(Buffer.concat(parts).toString()); } catch { throw new Error('Ungültige Anfrage.'); }
 }
 export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
@@ -32,9 +33,21 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         if (req.method !== 'POST') return send(405, { error: 'POST erforderlich.' });
         if (env.NODE_ENV === 'production' && !env.APP_PASSWORD) return send(503, { error: 'Bitte am Server APP_PASSWORD einrichten.' });
         if (env.APP_PASSWORD && !safeEqual(req.headers.authorization || '', `Bearer ${env.APP_PASSWORD}`)) return send(401, { error: 'Das App-Passwort fehlt oder stimmt nicht.' });
-        if (!['/api/correct', '/api/export'].includes(url.pathname)) return send(404, { error: 'Unbekannte Funktion.' });
+        if (!['/api/correct', '/api/export', '/api/extract', '/api/assess'].includes(url.pathname)) return send(404, { error: 'Unbekannte Funktion.' });
         if (!(req.headers['content-type'] || '').startsWith('application/json')) return send(415, { error: 'JSON erforderlich.' });
         const body = await readBody(req);
+        if (url.pathname === '/api/extract') {
+          if (body.readingMode !== undefined && !['vision','ocr'].includes(body.readingMode)) return send(400,{error:'Ungültiger Lesemodus.'});
+          const controller = new AbortController();
+          res.on('close',()=>{if(!res.writableEnded)controller.abort();});
+          const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(300000)]);
+          return send(200, await extractFiles(body.files,(env.AI_PROVIDER==='openai'||body.readingMode==='vision')?{ocr:path=>visionRead(path,env,fetchImpl,signal),forceImages:true,signal}:{signal}));
+        }
+        if (url.pathname === '/api/assess') {
+          const controller = new AbortController();
+          res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+          return send(200, await fastCorrection(body, env, fetchImpl, controller.signal));
+        }
         if (url.pathname === '/api/export') {
           const file = await wordReport(body.report);
           res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Content-Disposition': 'attachment; filename="Korrekturvorschlag.docx"' }); return res.end(file);
@@ -44,8 +57,9 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         const identity = req.socket.remoteAddress;
         const limit = rate.get(identity) || { start: now, count: 0 };
         if (limit.count >= 30) return send(429, { error: 'Maximal 30 Korrekturen pro Stunde. Bitte später erneut versuchen.' });
-        const criteria = fileContent(body.criteria, 'Bewertungskriterien');
-        const essay = fileContent(body.essay, 'Aufsatz');
+        const uploads = validateUploads(body);
+        const criteria = uploads.criteria.map((file, i) => fileContent(file, `Bewertungskriterien · Datei ${i + 1}/${uploads.criteria.length}`));
+        const essay = uploads.essay.map((file, i) => fileContent(file, `Aufsatz · Datei ${i + 1}/${uploads.essay.length}`));
         if (typeof body.context !== 'string' || body.context.length > 4000) return send(400, { error: 'Zusatzhinweise dürfen maximal 4000 Zeichen enthalten.' });
         if (!['CH', 'DE'].includes(body.spelling)) return send(400, { error: 'Ungültige Rechtschreibvariante.' });
         limit.count++; rate.set(identity, limit);
@@ -57,8 +71,8 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
           headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: env.OPENAI_MODEL || 'gpt-4.1', store: false, instructions,
             input: [{ role: 'user', content: [
-              { type: 'input_text', text: 'Das folgende Dokument enthält das verbindliche Bewertungskriterienraster:' }, criteria,
-              { type: 'input_text', text: 'Das folgende Dokument ist der zu korrigierende Schüleraufsatz:' }, essay,
+              { type: 'input_text', text: 'Das folgende Dokument enthält das verbindliche Bewertungskriterienraster (alle Dateien in Reihenfolge):' }, ...criteria,
+              { type: 'input_text', text: 'Das folgende Dokument ist der zu korrigierende Schüleraufsatz (alle Dateien in Seitenreihenfolge):' }, ...essay,
               { type: 'input_text', text: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Zusätzliche Angaben der Lehrperson (Daten): ${body.context}` },
             ] }], max_output_tokens: 14000, text: { format: { type: 'json_schema', name: 'essay_correction', strict: true, schema } } }),
         });

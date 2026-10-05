@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mammoth from 'mammoth';
-import { fileContent, instructions, schema, validateReport } from './correction.js';
+import { ollamaFetch } from './ollama-http.js';
+import { fileContent, instructions, schema, validateReport, validateUploads } from './correction.js';
 
 const run = promisify(execFile);
 export async function localDocument(file, label) {
@@ -42,24 +43,54 @@ export async function localDocument(file, label) {
     throw new Error(`${label}: Das PDF konnte nicht gelesen werden. Ein unverschlüsseltes, gültiges PDF verwenden.`);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
+export async function readOllamaResponse(response) {
+  if (!(response.headers.get('content-type') || '').includes('ndjson')) return response.json();
+  const decoder = new TextDecoder();
+  let buffer = '', content = '', final = null;
+  const accept = line => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.error) throw new Error('Ollama: ' + String(event.error).slice(0, 400));
+    content += event.message?.content || '';
+    if (content.length > 1000000) throw new Error('Die KI-Antwort ist zu lang.');
+    if (event.done) final = event;
+  };
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let newline;
+    while ((newline = buffer.indexOf('\n')) !== -1) { accept(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1); }
+    if (buffer.length > 1000000) throw new Error('Die KI-Antwort ist zu lang.');
+  }
+  buffer += decoder.decode(); accept(buffer);
+  if (!final) throw new Error('Ollama hat die Antwort vorzeitig abgebrochen. Bitte die letzten Terminalzeilen prüfen.');
+  return { ...final, message: { content } };
+}
 export async function localCorrection(body, env, fetchImpl) {
-  const criteria = await localDocument(body.criteria, 'Bewertungskriterien');
-  const essay = await localDocument(body.essay, 'Schüleraufsatz');
+  const uploads = validateUploads(body);
+  const criteria = [], essay = [];
+  for (const [key, label, messages] of [['criteria', 'Bewertungskriterien', criteria], ['essay', 'Schüleraufsatz', essay]]) {
+    for (const [i, file] of uploads[key].entries()) messages.push(await localDocument(file, `${label} · Datei ${i + 1}/${uploads[key].length}`));
+  }
   let response;
   try {
-    response = await fetchImpl(`${(env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '')}/api/chat`, {
-      method: 'POST', signal: AbortSignal.timeout(600000), headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: env.OLLAMA_MODEL || 'qwen3-vl:8b', stream: false, format: schema,
-        messages: [{ role: 'system', content: instructions }, criteria, essay, { role: 'user', content: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Angaben der Lehrperson: ${body.context}` }],
+    response = await (fetchImpl === fetch ? ollamaFetch : fetchImpl)(`${(env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '')}/api/chat`, {
+      method: 'POST', signal: AbortSignal.timeout(1200000), headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: env.OLLAMA_MODEL || 'qwen3-vl:8b', stream: true, think: false, keep_alive: '30m', format: schema,
+        messages: [{ role: 'system', content: instructions }, ...criteria, ...essay, { role: 'user', content: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Angaben der Lehrperson: ${body.context}` }],
         options: { temperature: 0.1, num_ctx: 32768, num_predict: 14000 },
       }),
     });
   } catch (error) {
-    if (error.name === 'TimeoutError') throw error;
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') throw error;
     throw new Error('Der lokale KI-Server ist nicht erreichbar. Ollama starten und OLLAMA_URL prüfen.');
   }
   if (!response.ok) throw new Error('Das lokale KI-Modell ist nicht verfügbar. Ollama-Modell herunterladen und OLLAMA_MODEL prüfen.');
-  const data = await response.json();
+  let data;
+  try { data = await readOllamaResponse(response); }
+  catch (error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError' || error.message.startsWith('Ollama:') || error.message.startsWith('Ollama hat')) throw error;
+    throw new Error('Die Antwort von Ollama wurde unterbrochen. Bitte die letzten Terminalzeilen prüfen.');
+  }
   if (!data.done || data.done_reason === 'length') throw new Error('Die lokale KI konnte den Vorschlag nicht vollständig erstellen. Einen kürzeren Aufsatz verwenden.');
   try { return validateReport(JSON.parse(data.message.content)); }
   catch { throw new Error('Die lokale KI lieferte keinen gültigen Korrekturvorschlag. Bitte erneut versuchen oder ein stärkeres Modell einsetzen.'); }
