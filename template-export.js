@@ -12,7 +12,11 @@ function fill(doc,cell,value){
  for(const node of Array.from(cell.childNodes))if(node.nodeType===1&&node.localName!=='tcPr'&&node!==p)cell.removeChild(node);
  for(const node of Array.from(p.childNodes))if(!(node.nodeType===1&&node.localName==='pPr'))p.removeChild(node);
  const run=doc.createElementNS(W,'w:r');if(props)run.appendChild(props.cloneNode(true));
- const t=doc.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(doc.createTextNode(String(value)));run.appendChild(t);p.appendChild(run);
+ String(value).split('\n').forEach((line,i)=>{
+  if(i)run.appendChild(doc.createElementNS(W,'w:br'));
+  const t=doc.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(doc.createTextNode(line));run.appendChild(t);
+ });
+ p.appendChild(run);
 }
 export async function templateReport(template,input){
  const report=validateReport(input);
@@ -41,8 +45,16 @@ export async function templateReport(template,input){
  }
  if(matched.size!==report.criteria.length)throw new Error('Raster und Word-Vorlage stimmen nicht vollständig überein. Keine Kriterien wurden übersprungen. Bitte die unveränderten Kriterien der Vorlage verwenden.');
  if(totalCell)fill(doc,totalCell,report.criteria.every(c=>c.earned!==null)?report.criteria.reduce((s,c)=>s+c.earned,0):'?');
+ const feedback = item => `${item.area}: ${item.aspect} [Beleg: «${item.evidence}»]`;
+ const notes = [
+  `Gesamtbeurteilung: ${report.summary}`,
+  'Stärken:', ...report.strengths.map(feedback),
+  'Entwicklungsfelder:', ...report.weaknesses.map(feedback),
+  'Nächste Schritte und Tipps:', ...report.next_steps.map(x=>`${x.focus}: ${x.tip}`),
+  `Beurteilungsstrenge: ${report.assessment_strictness}/5`,
+ ];
  for(const cell of Array.from(doc.getElementsByTagNameNS(W,'tc'))){
-  if(/^Anmerkungen\s*$/.test(text(cell)))fill(doc,cell,'Anmerkungen: '+report.summary);
+  if(/^Anmerkungen\s*$/.test(text(cell)))fill(doc,cell,'Anmerkungen:\n'+notes.join('\n'));
  }
  zip.file('word/document.xml',new XMLSerializer().serializeToString(doc));
  return zip.generateAsync({type:'nodebuffer',compression:'DEFLATE'});

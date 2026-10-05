@@ -2,6 +2,15 @@ const $ = id => document.getElementById(id);
 const selected = { criteria: [], essay: [] };
 let report = null;
 let password = '';
+const strictnessLabels = ['1 · sehr wohlwollend', '2 · eher wohlwollend', '3 · Mittel / ausgewogen', '4 · streng', '5 · sehr streng'];
+function updateStrictness() {
+  const input = $('assessmentStrictness');
+  const label = strictnessLabels[Number(input.value) - 1];
+  $('strictnessValue').textContent = label;
+  input.setAttribute('aria-valuetext', label);
+}
+updateStrictness();
+$('assessmentStrictness').addEventListener('input', () => { updateStrictness(); invalidateReport(); });
 const apiUrl = (window.AUFSATZ_CONFIG?.serverUrl || '').replace(/\/+$/, '');
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function status(message, error = false) { $('status').hidden = false; $('status').textContent = message; $('status').classList.toggle('error', error); }
@@ -91,13 +100,13 @@ function previews() {
   });
 }
 $('manualButton').onclick=()=>{showReview();previews();};
-for(const id of ['rubricText','essayText','context','visualNotes','spelling']) $(id).addEventListener('input',()=>{invalidateReport();$('reviewedText').checked=false;});
+for(const id of ['rubricText','essayText','context','visualNotes','spelling','assessmentStrictness']) $(id).addEventListener('input',()=>{invalidateReport();$('reviewedText').checked=false;});
 $('nextEssay').onclick=()=>{
   if(activeController) return;
   selected.essay=[]; $('essayText').value=''; $('visualNotes').value=''; $('reviewedText').checked=false; updateFile('essay'); invalidateReport(); previews(); status('Raster und Hinweise bleiben erhalten. Jetzt die nächsten Aufsatzseiten hochladen.'); $('essayZone').scrollIntoView({behavior:'smooth'});
 };
 function busy(value) {
-  for(const id of ['submitButton','assessButton','manualButton','nextEssay','criteria','essay','context','spelling','readingMode','rubricText','essayText','visualNotes','reviewedText']) $(id).disabled=value;
+  for(const id of ['submitButton','assessButton','manualButton','nextEssay','criteria','essay','context','spelling','readingMode','assessmentStrictness','rubricText','essayText','visualNotes','reviewedText']) $(id).disabled=value;
   document.querySelectorAll('[data-clear]').forEach(b=>b.disabled=value);
   $('cancelButton').hidden=!value;
   for(const id of ['criteria','essay']) updateFile(id);
@@ -137,7 +146,7 @@ $('assessButton').onclick=async()=>{
   if(!$('consent').checked) return status('Bitte die Berechtigung zur Verarbeitung bestätigen.',true);
   invalidateReport();
   await task('Beurteilung wird erstellt',async()=>{
-    const data=await (await request('/api/assess',{rubricText:$('rubricText').value,essayText:$('essayText').value,reviewed:true,spelling:$('spelling').value,context:($('context').value+'\nBeobachtungen der Lehrperson zu Schriftbild/Form: '+$('visualNotes').value).trim()})).json();
+    const data=await (await request('/api/assess',{rubricText:$('rubricText').value,essayText:$('essayText').value,reviewed:true,spelling:$('spelling').value,assessmentStrictness:Number($('assessmentStrictness').value),context:($('context').value+'\nBeobachtungen der Lehrperson zu Schriftbild/Form: '+$('visualNotes').value).trim()})).json();
     report=data.report;render();$('result').hidden=false;
     status(`Beurteilung fertig · ${data.metrics.seconds.toFixed(1)} Sekunden · ${data.metrics.model}${data.metrics.tokensPerSecond?' · '+data.metrics.tokensPerSecond.toFixed(1)+' Tokens/s':''}. Bitte den Vorschlag prüfen.`);
     $('result').scrollIntoView({behavior:'smooth'});
@@ -145,6 +154,7 @@ $('assessButton').onclick=async()=>{
 };
 const block = (title, content, className = '') => `<section class="report-block ${className}"><h3>${title}</h3>${content}</section>`;
 const list = items => `<ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+const feedbackList = items => `<ul>${items.map(item => `<li><strong>${escapeHtml(item.area)}:</strong> ${escapeHtml(item.aspect)} <small>Beleg: «${escapeHtml(item.evidence)}»</small></li>`).join('')}</ul>`;
 function reportHtml(r) {
   const scored = r.criteria.length && r.criteria.every(c => c.earned !== null && c.maximum !== null);
   const total = scored ? r.criteria.reduce((sum, c) => ({ earned: sum.earned + c.earned, maximum: sum.maximum + c.maximum }), { earned: 0, maximum: 0 }) : null;
@@ -153,24 +163,29 @@ function reportHtml(r) {
   ${r.uncertainties.length ? block('Bitte prüfen', list(r.uncertainties), 'uncertainties') : ''}
   ${block('Bewertung nach deinen Kriterien', r.criteria.length ? `<div class="table-wrap"><table><thead><tr><th>Kriterium</th><th>Beurteilung und Textbeleg</th><th>Punkte</th></tr></thead><tbody>${r.criteria.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong></td><td><p>${escapeHtml(c.assessment)}</p><small>${escapeHtml(c.evidence)}</small></td><td>${c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`}</td></tr>`).join('')}</tbody></table></div>` : '<p>Die Dokumente erlauben keine Bewertung.</p>')}
   ${block('Sprachliche Korrekturen', r.corrections.length ? r.corrections.map(c => `<div class="correction-item"><span class="category">${escapeHtml(c.category)}</span><p class="old">Original: ${escapeHtml(c.original)}</p><p class="new">Vorschlag: ${escapeHtml(c.suggestion)}</p><small>${escapeHtml(c.explanation)}</small></div>`).join('') : '<p>Keine konkreten sprachlichen Korrekturen aufgeführt.</p>')}
-  ${block('Stärken', list(r.strengths))}${block('Nächste Lernschritte', list(r.next_steps))}
+  ${block('Stärken', feedbackList(r.strengths))}${block('Entwicklungsfelder', feedbackList(r.weaknesses))}${block('Nächste Schritte und Tipps', `<ul>${r.next_steps.map(item => `<li><strong>${escapeHtml(item.focus)}:</strong> ${escapeHtml(item.tip)}</li>`).join('')}</ul>`)}
+  ${block('Gewählte Beurteilungsstrenge', `<p>${escapeHtml(r.assessment_strictness)} / 5</p>`)}
   ${r.corrected_text ? block('Sprachlich korrigierter Aufsatz', `<div class="text-block">${escapeHtml(r.corrected_text)}</div>`) : ''}
   <details><summary>Original / Transkription prüfen</summary><div class="text-block">${escapeHtml(r.original_text)}</div></details>`;
 }
 function render() { $('report').innerHTML = reportHtml(report); }
 function download(blob, filename) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000); }
-$('downloadWord').onclick = async () => {
+ $('downloadAssessment').onclick = async () => {
   if (!report) return;
-  $('downloadWord').disabled = true;
-  try { const templates = selected.criteria.filter(file => /\.docx$/i.test(file.name));
-    if (templates.length !== 1) throw new Error('Bitte genau eine Word-Vorlage als Bewertungsraster hochladen, damit das Originalformat erhalten bleibt.');
-    const response = await request('/api/export', { report, template: await readFile(templates[0]) }); download(await response.blob(), 'Korrekturvorschlag.docx'); }
+  $('downloadAssessment').disabled = true;
+  try {
+    const templates = selected.criteria.filter(file => /\.docx$/i.test(file.name));
+    if (templates.length > 1) throw new Error('Bitte nur eine Word-Vorlage als Bewertungsraster hochladen.');
+    const payload = templates.length ? { report, template: await readFile(templates[0]) } : { report };
+    const response = await request('/api/export', payload); download(await response.blob(), 'Beurteilung_Aufsatz.docx');
+  }
   catch (error) { status(error.message, true); }
-  finally { $('downloadWord').disabled = false; }
+  finally { $('downloadAssessment').disabled = false; }
 };
-$('downloadHtml').onclick = () => {
+$('downloadTeacherReport').onclick = async () => {
   if (!report) return;
-  const html = `<!doctype html><html lang="de-CH"><meta charset="utf-8"><title>Korrekturvorschlag</title><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:20px;line-height:1.6;color:#172333}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccd5e2;padding:12px;text-align:left;vertical-align:top}.text-block,p{white-space:pre-wrap}.report-block{margin-top:26px}.old{color:#933c3c}.new{color:#255a47}.notice,small{color:#566276}.metric{margin:12px 0}details{margin-top:20px}</style><h1>Korrekturvorschlag · Deutsch</h1>${reportHtml(report).replace('<details>', '<details open>')}</html>`;
-  download(new Blob([html], { type: 'text/html;charset=utf-8' }), 'Korrekturvorschlag.html');
+  $('downloadTeacherReport').disabled = true;
+  try { const response = await request('/api/export', { kind: 'teacher-report', report }); download(await response.blob(), 'Bericht_Lehrperson.docx'); }
+  catch (error) { status(error.message, true); }
+  finally { $('downloadTeacherReport').disabled = false; }
 };
-$('print').onclick = () => { document.querySelectorAll('#report details').forEach(item => item.open = true); window.print(); };

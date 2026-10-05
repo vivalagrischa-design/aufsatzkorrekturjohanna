@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mammoth from 'mammoth';
 import { ollamaFetch } from './ollama-http.js';
-import { fileContent, instructions, schema, validateReport, validateUploads } from './correction.js';
+import { fileContent, instructions, schema, validateReport, validateUploads, normalizeStrictness, strictnessGuides } from './correction.js';
 
 const run = promisify(execFile);
 export async function localDocument(file, label) {
@@ -66,6 +66,7 @@ export async function readOllamaResponse(response) {
   return { ...final, message: { content } };
 }
 export async function localCorrection(body, env, fetchImpl) {
+  const assessmentStrictness = normalizeStrictness(body.assessmentStrictness);
   const uploads = validateUploads(body);
   const criteria = [], essay = [];
   for (const [key, label, messages] of [['criteria', 'Bewertungskriterien', criteria], ['essay', 'Schüleraufsatz', essay]]) {
@@ -76,7 +77,7 @@ export async function localCorrection(body, env, fetchImpl) {
     response = await (fetchImpl === fetch ? ollamaFetch : fetchImpl)(`${(env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '')}/api/chat`, {
       method: 'POST', signal: AbortSignal.timeout(1200000), headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: env.OLLAMA_MODEL || 'qwen3-vl:8b', stream: true, think: false, keep_alive: '30m', format: schema,
-        messages: [{ role: 'system', content: instructions }, ...criteria, ...essay, { role: 'user', content: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Angaben der Lehrperson: ${body.context}` }],
+        messages: [{ role: 'system', content: `${instructions}\n\nBeurteilungsstrenge ${assessmentStrictness}/5: ${strictnessGuides[assessmentStrictness]} Sie verändert nur Grenzfälle innerhalb des Rasters; erfinde keine Kriterien oder Abzüge und gib assessment_strictness exakt als ${assessmentStrictness} zurück.` }, ...criteria, ...essay, { role: 'user', content: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Beurteilungsstrenge: ${assessmentStrictness}/5. Angaben der Lehrperson: ${body.context}` }],
         options: { temperature: 0.1, num_ctx: 32768, num_predict: 14000 },
       }),
     });
@@ -92,6 +93,10 @@ export async function localCorrection(body, env, fetchImpl) {
     throw new Error('Die Antwort von Ollama wurde unterbrochen. Bitte die letzten Terminalzeilen prüfen.');
   }
   if (!data.done || data.done_reason === 'length') throw new Error('Die lokale KI konnte den Vorschlag nicht vollständig erstellen. Einen kürzeren Aufsatz verwenden.');
-  try { return validateReport(JSON.parse(data.message.content)); }
+  try {
+    const report = validateReport(JSON.parse(data.message.content));
+    if (report.assessment_strictness !== assessmentStrictness) throw new Error('Die KI hat die gewählte Beurteilungsstrenge nicht übernommen.');
+    return report;
+  }
   catch { throw new Error('Die lokale KI lieferte keinen gültigen Korrekturvorschlag. Bitte erneut versuchen oder ein stärkeres Modell einsetzen.'); }
 }

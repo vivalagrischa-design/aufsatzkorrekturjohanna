@@ -19,6 +19,11 @@
 • Zu jedem Kriterium einen kurzen Kommentar schreiben, der die vergebenen Punkte erläutert.
 • Bei den Anmerkungen zuerst zwei positive Aspekte nennen, danach die zwei wichtigsten Punkte, an denen die Schülerin oder der Schüler weiterarbeiten soll."></textarea></div>
 </section>
+<section class="strictness-card" aria-labelledby="strictnessTitle">
+<div class="strictness-heading"><div><label id="strictnessTitle" for="assessmentStrictness">Beurteilungsstrenge</label><p>Die Einstellung wirkt nur bei Grenzfällen. Das hochgeladene Raster bleibt verbindlich.</p></div><output id="strictnessValue" for="assessmentStrictness">3 · Mittel / ausgewogen</output></div>
+<input id="assessmentStrictness" type="range" min="1" max="5" step="1" value="3" aria-valuetext="Mittel / ausgewogen">
+<div class="strictness-scale"><span>1 · wohlwollend</span><span>3 · mittel</span><span>5 · streng</span></div>
+</section>
 <div style="max-width:240px;margin-top:24px"><label for="spelling">Rechtschreibung</label><select id="spelling"><option value="CH">Schweiz · ss</option><option value="DE">Deutschland · ß</option></select></div>
 <label class="consent"><input type="checkbox" id="consent" required><span>Ich darf diese Texte mit dem eingerichteten KI-System verarbeiten. Schülernamen habe ich möglichst entfernt.</span></label>
 <label for="readingMode">Aufsatz lesen</label><select id="readingMode"><option value="vision">Handschrift · mit Bildmodell lesen</option><option value="ocr">Gedruckter Text · Mac-Texterkennung</option></select><p>Handschrift wird Seite für Seite gelesen. Das kann länger dauern. Mac-Texterkennung nur für Drucktext verwenden. Word- und TXT-Dateien werden direkt gelesen.</p>
@@ -40,7 +45,7 @@
 <button id="nextEssay" class="quiet" type="button">Nächster Aufsatz mit diesem Raster</button>
 </section>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div><button id="cancelButton" class="quiet" type="button" hidden>Abbrechen</button>
-<section id="result" class="result" hidden aria-labelledby="resultTitle"><div class="result-heading"><div><span class="eyebrow">ZUR PRÜFUNG DURCH DIE LEHRPERSON</span><h2 id="resultTitle">Dein Korrekturvorschlag</h2></div><div class="downloads"><button class="primary" id="downloadWord" type="button">Word herunterladen</button><button class="quiet" id="downloadHtml" type="button">Bericht herunterladen</button><button class="quiet" id="print" type="button">Drucken / PDF</button></div></div><div id="report"></div></section>
+<section id="result" class="result" hidden aria-labelledby="resultTitle"><div class="result-heading"><div><span class="eyebrow">ZUR PRÜFUNG DURCH DIE LEHRPERSON</span><h2 id="resultTitle">Dein Korrekturvorschlag</h2></div><div class="downloads"><button class="primary" id="downloadAssessment" type="button">Beurteilung Aufsatz herunterladen</button><button class="quiet" id="downloadTeacherReport" type="button">Bericht Lehrperson herunterladen</button></div></div><div id="report"></div></section>
 <footer>Aufsatzatelier <span>Ein Vorschlag unterstützt deine Korrektur. Die endgültige Bewertung liegt bei dir.</span></footer>
 </main>
 <dialog id="settings"><form id="settingsForm"><div class="dialog-heading"><h2>Schulzugang</h2><button type="button" class="quiet" id="closeSettings" aria-label="Schliessen">✕</button></div><p>Gib das Zugangspasswort deiner Schule ein. Einen KI-API-Schlüssel benötigst du nicht.</p><label for="password">Schulpasswort</label><input id="password" type="password" autocomplete="off" placeholder="Passwort deiner Schule"><small>Das Passwort bleibt nur für diese geöffnete Seite verfügbar und wird nicht auf deinem Gerät gespeichert.</small><button class="primary" type="submit">Zugang speichern</button></form></dialog>

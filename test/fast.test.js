@@ -21,12 +21,22 @@ test('OCR warnings and text are retained without AI',async()=>{
  const result=await extractFiles([{name:'page.jpg',data:Buffer.from('mock').toString('base64')}],{ocr:async()=>({text:'das Tiere',warnings:['Unsicher erkannt: das']})});
  assert.equal(result.pages[0].text,'das Tiere'); assert.equal(result.pages[0].ocr,true);
 });
-const body={essayText:'Ich finde das Tiere wichtig sind.',rubricText:'3 | Rechtschreibung',reviewed:true,spelling:'CH',context:''};
-const value={title:'Aufsatz',summary:'Vorschlag',criteria:[{id:0,earned:2,assessment:'dass erforderlich.',evidence:'das Tiere'}],corrections:[{original:'das Tiere',suggestion:'dass Tiere',category:'Rechtschreibung',explanation:'Konjunktion'}],strengths:['Meinung klar.','Thema erkennbar.'],next_steps:['dass prüfen.','Kommas prüfen.'],uncertainties:[]};
+const body={essayText:'Ich finde das Tiere wichtig sind.',rubricText:'3 | Rechtschreibung',reviewed:true,spelling:'CH',context:'',assessmentStrictness:3};
+const value={title:'Aufsatz',summary:'Vorschlag',criteria:[{id:0,earned:2,assessment:'dass erforderlich.',evidence:'das Tiere'}],corrections:[{original:'das Tiere',suggestion:'dass Tiere',category:'Rechtschreibung',explanation:'Konjunktion'}],strengths:[{area:'Inhalt',aspect:'Eine klare Meinung wird formuliert.',evidence:'Ich finde'},{area:'Inhalt',aspect:'Das Thema wird direkt genannt.',evidence:'das Tiere'},{area:'Aufbau',aspect:'Der Gedanke ist knapp ausgedrückt.',evidence:'wichtig sind'}],weaknesses:[{area:'Grammatik',aspect:'Die Verbform passt nicht zum Satzsubjekt.',evidence:'das Tiere wichtig sind'},{area:'Rechtschreibung',aspect:'Die Konjunktion ist falsch geschrieben.',evidence:'das Tiere'}],next_steps:[{focus:'Kongruenz',tip:'Prüfe bei jedem Satz, ob Subjekt und Verb in Zahl und Person zusammenpassen.'},{focus:'das oder dass',tip:'Ersetze dass durch dieses; wenn das nicht passt, brauchst du dass.'}],assessment_strictness:3,uncertainties:[]};
 const mocked=(v)=>async(url,request)=>{const payload=JSON.parse(request.body);assert.equal(payload.model,'qwen3:4b-instruct');assert.ok(payload.messages.every(m=>!m.images));assert.equal(payload.options.num_ctx,16384);return new Response(JSON.stringify({done:true,message:{content:JSON.stringify(v)},eval_count:100,eval_duration:1e9}));};
 test('Text assessment reconstructs fixed rubric and omits repeated essays',async()=>{
  const result=await fastCorrection(body,{},mocked(value));
  assert.equal(result.report.criteria[0].maximum,3);assert.equal(result.report.original_text,body.essayText);assert.equal(result.report.corrected_text,'');assert.equal(result.metrics.tokensPerSecond,100);
+ assert.equal(result.report.assessment_strictness,3);assert.equal(result.report.strengths.length,3);assert.equal(result.report.weaknesses.length,2);assert.equal(result.report.next_steps.length,2);
+});
+test('Strictness is applied to the prompt, accepted only for levels 1–5, and returned for review',async()=>{
+ let prompt='';
+ const result=await fastCorrection({...body,assessmentStrictness:5},{},async(url,request)=>{
+  prompt=JSON.parse(request.body).messages[0].content;
+  return new Response(JSON.stringify({done:true,message:{content:JSON.stringify({...value,assessment_strictness:5})}}));
+ });
+ assert.match(prompt,/Sehr streng/);assert.match(prompt,/keine Kriterien oder Abzüge/);assert.equal(result.report.assessment_strictness,5);
+ await assert.rejects(fastCorrection({...body,assessmentStrictness:6},{},mocked(value)),/1 bis 5/);
 });
 test('Unreviewed OCR cannot be assessed',async()=>{await assert.rejects(fastCorrection({...body,reviewed:false},{},mocked(value)),/zuerst prüfen/);});
 test('Fabricated evidence or correction cannot be returned',async()=>{

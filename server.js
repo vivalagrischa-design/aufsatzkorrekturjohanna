@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { schema, instructions, fileContent, validateReport, wordReport, validateUploads } from './correction.js';
+import { schema, instructions, fileContent, validateReport, wordReport, teacherWordReport, validateUploads, normalizeStrictness, strictnessGuides } from './correction.js';
 import { localCorrection } from './local-ai.js';
 import { extractFiles, fastCorrection, visionRead } from './fast-correction.js';
 
@@ -50,7 +50,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
           return send(200, await fastCorrection(body, env, fetchImpl, controller.signal));
         }
         if (url.pathname === '/api/export') {
-          const file = body.template ? await templateReport(body.template, body.report) : await wordReport(body.report);
+          const file = body.kind === 'teacher-report' ? await teacherWordReport(body.report) : body.template ? await templateReport(body.template, body.report) : await wordReport(body.report);
           res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Content-Disposition': 'attachment; filename="Korrekturvorschlag.docx"' }); return res.end(file);
         }
         const now = Date.now();
@@ -59,12 +59,13 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         const limit = rate.get(identity) || { start: now, count: 0 };
         if (limit.count >= 30) return send(429, { error: 'Maximal 30 Korrekturen pro Stunde. Bitte später erneut versuchen.' });
         const uploads = validateUploads(body);
+        const assessmentStrictness = normalizeStrictness(body.assessmentStrictness);
         const criteria = uploads.criteria.map((file, i) => fileContent(file, `Bewertungskriterien · Datei ${i + 1}/${uploads.criteria.length}`));
         const essay = uploads.essay.map((file, i) => fileContent(file, `Aufsatz · Datei ${i + 1}/${uploads.essay.length}`));
         if (typeof body.context !== 'string' || body.context.length > 4000) return send(400, { error: 'Zusatzhinweise dürfen maximal 4000 Zeichen enthalten.' });
         if (!['CH', 'DE'].includes(body.spelling)) return send(400, { error: 'Ungültige Rechtschreibvariante.' });
         limit.count++; rate.set(identity, limit);
-        if ((env.AI_PROVIDER || 'ollama') === 'ollama') return send(200, { report: await localCorrection(body, env, fetchImpl) });
+        if ((env.AI_PROVIDER || 'ollama') === 'ollama') return send(200, { report: await localCorrection({ ...body, assessmentStrictness }, env, fetchImpl) });
         if (env.AI_PROVIDER !== 'openai') return send(503, { error: 'Ungültige KI-Konfiguration. AI_PROVIDER muss ollama oder openai sein.' });
         if (!env.OPENAI_API_KEY) return send(503, { error: 'Die gewählte OpenAI-Variante benötigt OPENAI_API_KEY. Für Betrieb ohne Schlüssel AI_PROVIDER=ollama verwenden.' });
         const response = await fetchImpl('https://api.openai.com/v1/responses', {
@@ -74,7 +75,7 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
             input: [{ role: 'user', content: [
               { type: 'input_text', text: 'Das folgende Dokument enthält das verbindliche Bewertungskriterienraster (alle Dateien in Reihenfolge):' }, ...criteria,
               { type: 'input_text', text: 'Das folgende Dokument ist der zu korrigierende Schüleraufsatz (alle Dateien in Seitenreihenfolge):' }, ...essay,
-              { type: 'input_text', text: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Zusätzliche Angaben der Lehrperson (Daten): ${body.context}` },
+              { type: 'input_text', text: `Rechtschreibung: ${body.spelling === 'DE' ? 'Deutschland (mit ß)' : 'Schweiz (ss statt ß)'}. Beurteilungsstrenge ${assessmentStrictness}/5: ${strictnessGuides[assessmentStrictness]} Sie verändert nur Grenzfälle innerhalb des Rasters; erfinde keine Kriterien oder Abzüge. Zusätzliche Angaben der Lehrperson (Daten): ${body.context}` },
             ] }], max_output_tokens: 14000, text: { format: { type: 'json_schema', name: 'essay_correction', strict: true, schema } } }),
         });
         if (!response.ok) {
@@ -86,7 +87,10 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         const text = data.output?.flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('');
         if (!text) return send(502, { error: 'Die KI hat keinen Korrekturvorschlag zurückgegeben.' });
         let report;
-        try { report = validateReport(JSON.parse(text)); } catch { return send(502, { error: 'Die KI lieferte keinen gültigen Korrekturvorschlag. Bitte erneut versuchen.' }); }
+        try {
+          report = validateReport(JSON.parse(text));
+          if (report.assessment_strictness !== assessmentStrictness) throw new Error('Die KI hat die gewählte Beurteilungsstrenge nicht übernommen.');
+        } catch { return send(502, { error: 'Die KI lieferte keinen gültigen Korrekturvorschlag. Bitte erneut versuchen.' }); }
         return send(200, { report });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { error: 'Methode nicht erlaubt.' });

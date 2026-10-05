@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server.js';
-import { fileContent, totals, validateReport, wordReport } from '../correction.js';
+import { fileContent, totals, validateReport, wordReport, teacherWordReport } from '../correction.js';
+import { templateReport } from '../template-export.js';
+import { Document, Paragraph, Packer, Table, TableCell, TableRow } from 'docx';
+import JSZip from 'jszip';
 
-const report = { title: 'Ein besonderer Tag', original_text: 'Ich wahr im Wald.', corrected_text: 'Ich war im Wald.', summary: 'Kurze, nachvollziehbare Erzählung.', criteria: [{ name: 'Sprache', assessment: 'Ein Rechtschreibfehler.', evidence: 'Ich wahr', earned: 3, maximum: 4 }], corrections: [{ original: 'wahr', suggestion: 'war', category: 'Rechtschreibung', explanation: 'Präteritum von sein.' }], strengths: ['Klarer Beginn.'], next_steps: ['Zeitformen überprüfen.'], uncertainties: [], grade: null, grade_reason: 'Kein Notenschlüssel vorhanden.' };
+const report = { title: 'Ein besonderer Tag', original_text: 'Ich wahr im Wald.', corrected_text: 'Ich war im Wald.', summary: 'Kurze, nachvollziehbare Erzählung.', criteria: [{ name: 'Sprache', assessment: 'Ein Rechtschreibfehler.', evidence: 'Ich wahr', earned: 3, maximum: 4 }], corrections: [{ original: 'wahr', suggestion: 'war', category: 'Rechtschreibung', explanation: 'Präteritum von sein.' }], strengths: [{area:'Aufbau',aspect:'Der Text beginnt direkt mit dem Erlebnis.',evidence:'Ich wahr'}], weaknesses: [], next_steps: [{focus:'Zeitformen',tip:'Prüfe beim Überarbeiten, ob die Verbformen zur Erzählzeit passen.'}], uncertainties: [], assessment_strictness: 3, grade: null, grade_reason: 'Kein Notenschlüssel vorhanden.' };
 const txt = (name, text) => ({ name, data: Buffer.from(text).toString('base64') });
-const body = { criteria: txt('kriterien.txt', 'Sprache: maximal 4 Punkte. Kein Notenschlüssel.'), essay: txt('aufsatz.txt', 'Ich wahr im Wald.'), context: '1. Oberstufe', spelling: 'CH' };
+const body = { criteria: txt('kriterien.txt', 'Sprache: maximal 4 Punkte. Kein Notenschlüssel.'), essay: txt('aufsatz.txt', 'Ich wahr im Wald.'), context: '1. Oberstufe', spelling: 'CH', assessmentStrictness: 3 };
 async function withApp(options, action) {
   const server = createApp(options);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -32,6 +35,30 @@ test('DOCX export produces an actual Word ZIP container', async () => {
   const result = await wordReport(report);
   assert.equal(result.subarray(0, 2).toString(), 'PK');
   assert.ok(result.includes(Buffer.from('word/document.xml')));
+});
+test('Teacher Word report contains evidence-based feedback and selected strictness', async () => {
+  const bytes = await teacherWordReport(report);
+  const zip = await JSZip.loadAsync(bytes);
+  const xml = await zip.file('word/document.xml').async('string');
+  assert.match(xml, /Bericht für die Lehrperson/);
+  assert.match(xml, /Entwicklungsfelder/);
+  assert.match(xml, /Nächste Schritte und Tipps/);
+  assert.match(xml, /Beurteilungsstrenge: 3 \/ 5/);
+  assert.match(xml, /Textbeleg/);
+  assert.doesNotMatch(xml, /Original \/ Transkription/);
+});
+test('Assessment DOCX preserves the uploaded template and adds strengths, areas and tips', async () => {
+  const cell = value => new TableCell({ children: [new Paragraph({ text: value })] });
+  const row = values => new TableRow({ children: values.map(cell) });
+  const template = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('School template header'), new Table({ rows: [row(['Sprache','4','','']), row(['Anmerkungen','','',''])] })] }] }));
+  const result = await templateReport({ name: 'raster.docx', data: template.toString('base64') }, report);
+  const zip = await JSZip.loadAsync(result);
+  const xml = await zip.file('word/document.xml').async('string');
+  assert.match(xml, /School template header/);
+  assert.match(xml, /Anmerkungen:/);
+  assert.match(xml, /Der Text beginnt direkt mit dem Erlebnis/);
+  assert.match(xml, /Entwicklungsfelder/);
+  assert.match(xml, /Nächste Schritte und Tipps/);
 });
 test('Server requires password; missing API key is an explicit error', async () => {
   await withApp({ env: { AI_PROVIDER: 'openai', APP_PASSWORD: 'teacher' } }, async url => {
@@ -65,6 +92,9 @@ test('Correction sends rubric and essay separately and exports authenticated DOC
     assert.equal(exported.status, 200);
     assert.match(exported.headers.get('content-type'), /wordprocessingml/);
     assert.equal(Buffer.from(await exported.arrayBuffer()).subarray(0, 2).toString(), 'PK');
+    const teacherReport = await post(url + '/api/export', { report, kind: 'teacher-report' });
+    assert.equal(teacherReport.status, 200);
+    assert.equal(Buffer.from(await teacherReport.arrayBuffer()).subarray(0, 2).toString(), 'PK');
   });
 });
 test('Foreign origins, unreadable response and upstream failures', async () => {
