@@ -92,7 +92,7 @@ Starten:
 npm start
 ```
 
-`http://localhost:3000` öffnen. Unter **Schulzugang** das Schulpasswort eingeben. Dann Kriterien und Aufsatz hochladen und die Korrektur erstellen. Kein API-Schlüssel erforderlich.
+`http://localhost:3000` öffnen. Unter **Schulzugang** das Schulpasswort eingeben; die App prüft es direkt am Server, bevor sie es als gültig meldet. Dann Bewertungskriterien und Aufsatz hochladen und die Korrektur erstellen. Kein API-Schlüssel erforderlich.
 
 Für Zugriff im Schulnetz die Adresse dieses Rechners verwenden, zum Beispiel `http://192.168.1.20:3000`. Für dauerhaften oder externen Betrieb einen HTTPS-Zugang über die Schul-IT einrichten. Der Node-Server startet auf allen Netzwerkinterfaces; Firewall und Zugang sollen vom Betreiber passend eingerichtet werden.
 

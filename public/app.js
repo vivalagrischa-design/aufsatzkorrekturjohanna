@@ -28,7 +28,13 @@ function invalidateReport() { report = null; $('result').hidden = true; }
 function updateFile(id) {
   const files = selected[id];
   $(id + 'Name').textContent = files.length ? `${files.length} Datei${files.length === 1 ? '' : 'en'} ausgewählt · weitere hinzufügen` : (id === 'criteria' ? 'Bewertungskriterien hochladen' : 'Aufsatz hochladen');
-  if(id==='criteria') $('downloadExcel').hidden=!files.some(file=>/\.xlsx$/i.test(file.name));
+  if(id==='criteria') {
+    const hasExcel=files.some(file=>/\.xlsx$/i.test(file.name));
+    const hasWord=files.some(file=>/\.docx$/i.test(file.name));
+    $('downloadExcel').hidden=!hasExcel;
+    $('downloadAssessment').hidden=!hasWord&&hasExcel;
+    $('downloadTeacherReport').hidden=!hasWord&&hasExcel;
+  }
   $(id + 'Zone').classList.toggle('ready', files.length > 0);
   document.querySelector(`[data-clear="${id}"]`).hidden = !files.length;
   const list = $(id + 'List'); list.replaceChildren();
@@ -56,10 +62,18 @@ for (const id of ['criteria', 'essay']) {
 }
 $('settingsButton').onclick = () => $('settings').showModal();
 $('closeSettings').onclick = () => $('settings').close();
-$('settingsForm').onsubmit = event => {
+$('settingsForm').onsubmit = async event => {
   event.preventDefault();
-  password = $('password').value; $('password').value = '';
-  $('settings').close(); status('Schulzugang gespeichert. Du kannst jetzt die Korrektur starten.');
+  const candidate=$('password').value.trim();
+  if(!candidate) return status('Bitte das Schulpasswort eingeben.',true);
+  const button=$('settingsForm').querySelector('button[type="submit"]');button.disabled=true;
+  try {
+    const response=await fetch(`${apiUrl}/api/auth-check`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${candidate}`},body:'{}',signal:AbortSignal.timeout(10000)});
+    if(response.status===401) return status('Der Server akzeptiert dieses Passwort nicht. Bitte das APP_PASSWORD in den Render-Umgebungsvariablen prüfen.',true);
+    if(!response.ok){let data;try{data=await response.json();}catch{}return status(data?.error||'Der Schulzugang konnte nicht geprüft werden. Bitte die Serververbindung kontrollieren.',true);}
+    password=candidate;$('password').value='';$('settings').close();status('Schulzugang vom Server bestätigt. Du kannst jetzt die Texte einlesen.');
+  } catch(error) { status(error.name==='TimeoutError'?'Der Server antwortet nicht. Bitte den Render-Dienst prüfen.':'Der Schulzugang konnte nicht geprüft werden. Bitte die Serververbindung kontrollieren.',true); }
+  finally {button.disabled=false;}
 };
 function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, data: reader.result.split(',')[1] }); reader.onerror = () => reject(new Error('Die Datei konnte nicht gelesen werden.')); reader.readAsDataURL(file); }); }
 async function prepareFile(file) {
@@ -146,10 +160,10 @@ $('assessButton').onclick=async()=>{
   if(!$('reviewedText').checked) return status('Bitte zuerst den Text und das Raster prüfen und die Bestätigung setzen.',true);
   if(!$('consent').checked) return status('Bitte die Berechtigung zur Verarbeitung bestätigen.',true);
   invalidateReport();
-  await task('Beurteilung wird erstellt',async()=>{
+  await task('Bewertung wird erstellt',async()=>{
     const data=await (await request('/api/assess',{rubricText:$('rubricText').value,essayText:$('essayText').value,reviewed:true,spelling:$('spelling').value,assessmentStrictness:Number($('assessmentStrictness').value),context:($('context').value+'\nBeobachtungen der Lehrperson zu Schriftbild/Form: '+$('visualNotes').value).trim()})).json();
     report=data.report;render();$('result').hidden=false;
-    status(`Beurteilung fertig · ${data.metrics.seconds.toFixed(1)} Sekunden · ${data.metrics.model}${data.metrics.tokensPerSecond?' · '+data.metrics.tokensPerSecond.toFixed(1)+' Tokens/s':''}. Bitte den Vorschlag prüfen.`);
+    status(`Bewertung fertig · ${data.metrics.seconds.toFixed(1)} Sekunden · ${data.metrics.model}${data.metrics.tokensPerSecond?' · '+data.metrics.tokensPerSecond.toFixed(1)+' Tokens/s':''}. Bitte den Vorschlag prüfen.`);
     $('result').scrollIntoView({behavior:'smooth'});
   });
 };
@@ -160,9 +174,9 @@ function reportHtml(r) {
   const scored = r.criteria.length && r.criteria.every(c => c.earned !== null && c.maximum !== null);
   const total = scored ? r.criteria.reduce((sum, c) => ({ earned: sum.earned + c.earned, maximum: sum.maximum + c.maximum }), { earned: 0, maximum: 0 }) : null;
   return `<h3>${escapeHtml(r.title)}</h3><p class="notice">KI-Vorschlag: Bitte Belege, Transkription und Bewertung vor der Verwendung prüfen.</p>${total || r.grade !== null ? `<div class="metrics">${total ? `<div class="metric"><strong>${total.earned} / ${total.maximum}</strong><span>Gesamtpunkte</span></div>` : ''}${r.grade !== null ? `<div class="metric"><strong>${escapeHtml(r.grade)}</strong><span>Notenvorschlag nach Raster</span></div>` : ''}</div>` : ''}
-  ${block('Gesamtbeurteilung', `<p>${escapeHtml(r.summary)}</p><p class="notice">${escapeHtml(r.grade_reason)}</p>`)}
+  ${block('Gesamtbewertung', `<p>${escapeHtml(r.summary)}</p><p class="notice">${escapeHtml(r.grade_reason)}</p>`)}
   ${r.uncertainties.length ? block('Bitte prüfen', list(r.uncertainties), 'uncertainties') : ''}
-  ${block('Beurteilung nach deinen Bewertungskriterien', r.criteria.length ? `<div class="table-wrap"><table><thead><tr><th>Bewertungskriterium</th><th>Beurteilung und Textbeleg</th><th>Punkte</th></tr></thead><tbody>${r.criteria.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong></td><td><p>${escapeHtml(c.assessment)}</p><small>${escapeHtml(c.evidence)}</small></td><td>${c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`}</td></tr>`).join('')}</tbody></table></div>` : '<p>Die Dokumente erlauben keine Bewertung.</p>')}
+  ${block('Bewertung nach deinen Bewertungskriterien', r.criteria.length ? `<div class="table-wrap"><table><thead><tr><th>Bewertungskriterium</th><th>Bewertung und Textbeleg</th><th>Punkte</th></tr></thead><tbody>${r.criteria.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong></td><td><p>${escapeHtml(c.assessment)}</p><small>${escapeHtml(c.evidence)}</small></td><td>${c.earned === null ? 'Ohne Punkteskala' : `${c.earned} / ${c.maximum}`}</td></tr>`).join('')}</tbody></table></div>` : '<p>Die Dokumente erlauben keine Bewertung.</p>')}
   ${block('Sprachliche Korrekturen', r.corrections.length ? r.corrections.map(c => `<div class="correction-item"><span class="category">${escapeHtml(c.category)}</span><p class="old">Original: ${escapeHtml(c.original)}</p><p class="new">Vorschlag: ${escapeHtml(c.suggestion)}</p><small>${escapeHtml(c.explanation)}</small></div>`).join('') : '<p>Keine konkreten sprachlichen Korrekturen aufgeführt.</p>')}
   ${block('Stärken', feedbackList(r.strengths))}${block('Entwicklungsfelder', feedbackList(r.weaknesses))}${block('Nächste Schritte und Tipps', `<ul>${r.next_steps.map(item => `<li><strong>${escapeHtml(item.focus)}:</strong> ${escapeHtml(item.tip)}</li>`).join('')}</ul>`)}
   ${block('Gewählte Beurteilungsstrenge', `<p>${escapeHtml(r.assessment_strictness)} / 5</p>`)}
@@ -178,7 +192,7 @@ function download(blob, filename) { const url = URL.createObjectURL(blob); const
     const templates = selected.criteria.filter(file => /\.docx$/i.test(file.name));
     if (templates.length > 1) throw new Error('Bitte nur eine Word-Vorlage mit Bewertungskriterien hochladen.');
     const payload = templates.length ? { report, template: await readFile(templates[0]) } : { report };
-    const response = await request('/api/export', payload); download(await response.blob(), 'Beurteilung_Aufsatz.docx');
+    const response = await request('/api/export', payload); download(await response.blob(), 'Bewertung_Aufsatz.docx');
   }
   catch (error) { status(error.message, true); }
   finally { $('downloadAssessment').disabled = false; }
@@ -197,7 +211,7 @@ $('downloadExcel').onclick = async () => {
   $('downloadExcel').disabled=true;
   try {
     const response=await request('/api/export',{kind:'excel-report',template:await readFile(template),report});
-    download(await response.blob(),template.name.replace(/\.xlsx$/i,'')+'_mit_Beurteilung.xlsx');
+    download(await response.blob(),template.name.replace(/\.xlsx$/i,'')+'_Bewertung.xlsx');
   } catch(error) { status(error.message,true); }
   finally { $('downloadExcel').disabled=false; }
 };

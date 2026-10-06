@@ -69,6 +69,14 @@ test('Server requires password; missing API key is an explicit error', async () 
     assert.equal((await fetch(url + '/')).status, 200);
   });
 });
+test('School password is checked against the server before it is saved in the browser', async () => {
+  await withApp({ env: { AI_PROVIDER: 'openai', APP_PASSWORD: 'teacher' } }, async url => {
+    assert.equal((await post(url + '/api/auth-check', {}, 'wrong')).status, 401);
+    const valid=await post(url + '/api/auth-check', {});
+    assert.equal(valid.status,200);
+    assert.deepEqual(await valid.json(),{ok:true});
+  });
+});
 test('Production refuses unprotected correction', async () => {
   await withApp({ env: { AI_PROVIDER: 'openai', NODE_ENV: 'production', OPENAI_API_KEY: 'test' } }, async url => {
     assert.equal((await post(url + '/api/correct', body)).status, 503);

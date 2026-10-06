@@ -30,14 +30,16 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
       if (origin && origin !== ownOrigin && !allowed.includes(origin)) return send(403, { error: 'Diese Website ist am Server nicht freigeschaltet (ALLOWED_ORIGIN).' });
       if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' }); return res.end(); }
-      if (url.pathname === '/api/health') return send(200, { ok: true, provider: env.AI_PROVIDER || 'ollama', passwordRequired: Boolean(env.APP_PASSWORD) });
+      if (url.pathname === '/api/health') return send(200, { ok: true, provider: env.AI_PROVIDER || 'ollama', passwordRequired: Boolean((env.APP_PASSWORD || '').trim()) });
       if (url.pathname.startsWith('/api/')) {
         if (req.method !== 'POST') return send(405, { error: 'POST erforderlich.' });
-        if (env.NODE_ENV === 'production' && !env.APP_PASSWORD) return send(503, { error: 'Bitte am Server APP_PASSWORD einrichten.' });
-        if (env.APP_PASSWORD && !safeEqual(req.headers.authorization || '', `Bearer ${env.APP_PASSWORD}`)) return send(401, { error: 'Das App-Passwort fehlt oder stimmt nicht.' });
-        if (!['/api/correct', '/api/export', '/api/extract', '/api/assess'].includes(url.pathname)) return send(404, { error: 'Unbekannte Funktion.' });
+        const configuredPassword=(env.APP_PASSWORD||'').trim();
+        if (env.NODE_ENV === 'production' && !configuredPassword) return send(503, { error: 'Bitte am Server APP_PASSWORD einrichten.' });
+        if (configuredPassword && !safeEqual(req.headers.authorization || '', `Bearer ${configuredPassword}`)) return send(401, { error: 'Das App-Passwort fehlt oder stimmt nicht.' });
+        if (!['/api/correct', '/api/export', '/api/extract', '/api/assess', '/api/auth-check'].includes(url.pathname)) return send(404, { error: 'Unbekannte Funktion.' });
         if (!(req.headers['content-type'] || '').startsWith('application/json')) return send(415, { error: 'JSON erforderlich.' });
         const body = await readBody(req);
+        if (url.pathname === '/api/auth-check') return send(200, { ok: true });
         if (url.pathname === '/api/extract') {
           if (body.readingMode !== undefined && !['vision','ocr'].includes(body.readingMode)) return send(400,{error:'Ungültiger Lesemodus.'});
           const controller = new AbortController();

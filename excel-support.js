@@ -5,10 +5,10 @@ import { validateReport, fileContent } from './correction.js';
 const MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const DOC_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
-const CONTENT_TYPES = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const parseXml = xml => new DOMParser({ errorHandler: { warning() {}, error(message) { throw new Error(`Ungültige Excel-Struktur: ${message}`); }, fatalError(message) { throw new Error(`Ungültige Excel-Struktur: ${message}`); } } }).parseFromString(xml, 'application/xml');
 const xmlText = el => Array.from(el.getElementsByTagNameNS(MAIN, 't')).map(x => x.textContent).join('');
 const colNumber = ref => { let n=0; for (const c of ref.toUpperCase().match(/^[A-Z]+/)?.[0] || '') n=n*26+c.charCodeAt(0)-64; return n; };
+const colName = number => { let n=number,s=''; while(n>0){const rem=(n-1)%26;s=String.fromCharCode(65+rem)+s;n=Math.floor((n-1)/26);} return s; };
 function safeZip(zip) {
   const total = Object.values(zip.files).reduce((sum, f) => sum + (f._data?.uncompressedSize || 0), 0);
   if (total > 40 * 1024 * 1024) throw new Error('Die entpackte Excel-Datei ist zu gross (maximal 40 MB).');
@@ -71,51 +71,68 @@ export async function extractXlsx(file) {
   return {pages,rubric};
 }
 
-const excelCell=(ref,value)=>{
-  const safe=String(value??'');
-  return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${safe.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</t></is></c>`;
-};
-function reportWorksheet(report) {
-  const rows=[];
-  const row=(n,cells)=>`<row r="${n}">${cells.join('')}</row>`;
-  rows.push(row(1,[excelCell('A1','Beurteilung des Aufsatzes')]));
-  rows.push(row(2,[excelCell('A2',report.title)]));
-  rows.push(row(4,[excelCell('A4','Gesamtbeurteilung'),excelCell('B4',report.summary)]));
-  rows.push(row(5,[excelCell('A5','Notenvorschlag'),excelCell('B5',report.grade===null?'Keine Note':report.grade),excelCell('C5',report.grade_reason)]));
-  rows.push(row(6,[excelCell('A6','Beurteilungsstrenge'),excelCell('B6',`${report.assessment_strictness} / 5`)]));
-  rows.push(row(8,[excelCell('A8','Bewertungskriterium'),excelCell('B8','Punkte'),excelCell('C8','Beurteilung'),excelCell('D8','Textbeleg')]));
-  report.criteria.forEach((c,i)=>rows.push(row(9+i,[excelCell(`A${9+i}`,c.name),excelCell(`B${9+i}`,c.earned===null?'Nicht beurteilbar':`${c.earned} / ${c.maximum}`),excelCell(`C${9+i}`,c.assessment),excelCell(`D${9+i}`,c.evidence)])));
-  let n=10+report.criteria.length;
-  const section=(title,items,render)=>{rows.push(row(n,[excelCell(`A${n}`,title)]));n++; for(const item of items){rows.push(row(n,[excelCell(`A${n}`,render(item))]));n++;}};
-  section('Sprachliche Korrekturen',report.corrections,x=>`${x.category}: ${x.original} → ${x.suggestion} — ${x.explanation}`);
-  section('Stärken',report.strengths,x=>`${x.area}: ${x.aspect} [Beleg: ${x.evidence}]`);
-  section('Entwicklungsfelder',report.weaknesses,x=>`${x.area}: ${x.aspect} [Beleg: ${x.evidence}]`);
-  section('Nächste Schritte',report.next_steps,x=>`${x.focus}: ${x.tip}`);
-  section('Bitte prüfen',report.uncertainties,x=>x);
-  const last=n;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheetViews><sheetView workbookViewId="0"/></sheetViews><cols><col min="1" max="1" width="30" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="65" customWidth="1"/><col min="4" max="4" width="55" customWidth="1"/></cols><sheetData>${rows.join('')}</sheetData><autoFilter ref="A8:D${8+report.criteria.length}"/><pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>`;
+function writeCell(doc,row,ref,value){
+  const cells=Array.from(row.getElementsByTagNameNS(MAIN,'c'));
+  let cell=cells.find(x=>x.getAttribute('r')===ref);
+  if(!cell){cell=doc.createElementNS(MAIN,'c');cell.setAttribute('r',ref);const col=colNumber(ref);const next=cells.find(x=>colNumber(x.getAttribute('r'))>col);row.insertBefore(cell,next||null);}
+  for(const child of Array.from(cell.childNodes)) cell.removeChild(child);
+  if(typeof value==='number'&&Number.isFinite(value)){cell.removeAttribute('t');const v=doc.createElementNS(MAIN,'v');v.appendChild(doc.createTextNode(String(value)));cell.appendChild(v);}
+  else {cell.setAttribute('t','inlineStr');const is=doc.createElementNS(MAIN,'is'),t=doc.createElementNS(MAIN,'t');t.setAttribute('xml:space','preserve');t.appendChild(doc.createTextNode(String(value??'')));is.appendChild(t);cell.appendChild(is);}
 }
+function fillTemplateSheet(doc,shared,report){
+  const rowElements=Array.from(doc.getElementsByTagNameNS(MAIN,'row'));
+  const rowByNumber=new Map(rowElements.map(row=>[Number(row.getAttribute('r')),row]));
+  const cellsByRow=new Map();
+  for(const row of rowElements){
+    const cells=Array.from(row.getElementsByTagNameNS(MAIN,'c')).map(cell=>({cell,col:colNumber(cell.getAttribute('r')),value:cellValue(cell,shared),formula:cell.getElementsByTagNameNS(MAIN,'f')[0]?.textContent||''}));
+    cellsByRow.set(Number(row.getAttribute('r')),cells);
+  }
+  const normalized=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLocaleLowerCase('de');
+  const matches=new Map();
+  for(const [rowNum,cells] of cellsByRow) for(const item of cells){const value=normalized(item.value);if(value)matches.set(value,{rowNum,cells,labelCol:item.col});}
+  const usedLeafScores=[];
+  for(const criterion of report.criteria){
+    if(/^(minuten prüfungsdauer|mögliche \/ erreichte punkte|unterschrift)/i.test(criterion.name.trim())) continue;
+    const match=matches.get(normalized(criterion.name)); if(!match) continue;
+    const row=rowByNumber.get(match.rowNum);if(!row)continue;
+    const maxima=match.cells.filter(x=>x.col>match.labelCol&&(x.formula||(/^\d+(?:[.,]\d+)?$/.test(x.value.trim())&&(criterion.maximum===null||Number(x.value.replace(',','.'))===criterion.maximum))));
+    if(!maxima.length) continue;
+    const maximumCell=maxima.sort((a,b)=>a.col-b.col).at(-1);
+    const maxCol=maximumCell.col;
+    const scoreCandidates=match.cells.filter(x=>x.col>maxCol&&!x.value.trim()&&!x.formula&&x.cell.getAttribute('s'));
+    const scoreCell=scoreCandidates.sort((a,b)=>a.col-b.col).at(-1);
+    const feedbackCandidates=match.cells.filter(x=>x.col>match.labelCol&&x.col<maxCol&&!x.value.trim()&&!x.formula&&x.cell.getAttribute('s'));
+    const feedbackCell=feedbackCandidates.sort((a,b)=>a.col-b.col).at(-1);
+    const scoreRef=scoreCell?.cell.getAttribute('r')||`${colName(maxCol+2)}${match.rowNum}`;
+    const feedbackRef=feedbackCell?.cell.getAttribute('r')||`${colName(maxCol+1)}${match.rowNum}`;
+    writeCell(doc,row,scoreRef,criterion.earned===null?'n. b.':criterion.earned);
+    if(criterion.assessment) writeCell(doc,row,feedbackRef,criterion.assessment);
+    if(match.labelCol>1) usedLeafScores.push(criterion.earned);
+  }
+  // Put the student-facing feedback into the original template's existing + / - fields.
+  const positive=report.strengths.slice(0,3), growth=report.weaknesses.slice(0,3);
+  positive.forEach((item,i)=>{const row=rowByNumber.get(50+i);if(row)writeCell(doc,row,`B${50+i}`,`${item.area}: ${item.aspect} [${item.evidence}]`);});
+  growth.forEach((item,i)=>{const row=rowByNumber.get(50+i);if(row)writeCell(doc,row,`E${50+i}`,`${item.area}: ${item.aspect} [${item.evidence}]`);});
+  const totalRow=rowByNumber.get(45); if(totalRow&&usedLeafScores.length){
+    const complete=report.criteria.filter(c=>! /^(minuten prüfungsdauer|mögliche \/ erreichte punkte|unterschrift)/i.test(c.name.trim())).every(c=>c.earned!==null);
+    const earned=usedLeafScores.filter(x=>x!==null).reduce((a,b)=>a+b,0);
+    writeCell(doc,totalRow,'H45',earned);
+    if(!complete){const gradeRow=rowByNumber.get(46);if(gradeRow)writeCell(doc,gradeRow,'H46','');}
+    else if(report.grade!==null){const gradeRow=rowByNumber.get(46);if(gradeRow)writeCell(doc,gradeRow,'H46',report.grade);}
+    else {const gradeRow=rowByNumber.get(46);if(gradeRow)writeCell(doc,gradeRow,'H46','');}
+  }
+  return new XMLSerializer().serializeToString(doc);
+}
+
 export async function excelReport(template, input) {
   const report=validateReport(input); fileContent(template,'Excel-Vorlage');
   if(!/\.xlsx$/i.test(template.name)) throw new Error('Für den Excel-Download bitte eine XLSX-Datei mit Bewertungskriterien hochladen.');
   const zip=await JSZip.loadAsync(Buffer.from(template.data,'base64')); safeZip(zip);
   const {workbook,rels}=await workbookParts(zip);
-  const sheets=workbook.getElementsByTagNameNS(MAIN,'sheets')[0]; if(!sheets) throw new Error('Die Excel-Arbeitsmappe enthält keine Tabellenblätter.');
-  const existing=Array.from(sheets.getElementsByTagNameNS(MAIN,'sheet'));
-  let name='Beurteilung',suffix=2; while(existing.some(s=>s.getAttribute('name')===name)) name=`Beurteilung ${suffix++}`;
-  const sheetIds=existing.map(x=>Number(x.getAttribute('sheetId'))||0), sheetId=Math.max(0,...sheetIds)+1;
-  const relsList=Array.from(rels.getElementsByTagNameNS(PACKAGE_REL,'Relationship'));
-  let ridNum=1; while(relsList.some(x=>x.getAttribute('Id')===`rId${ridNum}`)) ridNum++;
-  const sheetNums=Object.keys(zip.files).map(x=>Number(x.match(/^xl\/worksheets\/sheet(\d+)\.xml$/)?.[1]||0));
-  const sheetPath=`xl/worksheets/sheet${Math.max(0,...sheetNums)+1}.xml`;
-  const sheetEl=workbook.createElementNS(MAIN,'sheet'); sheetEl.setAttribute('name',name); sheetEl.setAttribute('sheetId',String(sheetId)); sheetEl.setAttributeNS(DOC_REL,'r:id',`rId${ridNum}`); sheets.appendChild(sheetEl);
-  const relEl=rels.createElementNS(PACKAGE_REL,'Relationship'); relEl.setAttribute('Id',`rId${ridNum}`); relEl.setAttribute('Type',`${DOC_REL}/worksheet`); relEl.setAttribute('Target',sheetPath.slice(3)); rels.documentElement.appendChild(relEl);
-  const contentFile=zip.file('[Content_Types].xml'); if(!contentFile) throw new Error('Die Excel-Datei ist unvollständig.');
-  const contentDoc=parseXml(await contentFile.async('string'));
-  const override=contentDoc.createElementNS(CONTENT_TYPES,'Override'); override.setAttribute('PartName',`/${sheetPath}`); override.setAttribute('ContentType','application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'); contentDoc.documentElement.appendChild(override);
-  zip.file('xl/workbook.xml',new XMLSerializer().serializeToString(workbook));
-  zip.file('xl/_rels/workbook.xml.rels',new XMLSerializer().serializeToString(rels));
-  zip.file('[Content_Types].xml',new XMLSerializer().serializeToString(contentDoc));
-  zip.file(sheetPath,reportWorksheet(report));
+  const targets=worksheetTargets(workbook,rels); if(!targets.length)throw new Error('Die Excel-Arbeitsmappe enthält keine Tabellenblätter.');
+  const shared=parseShared(await zip.file('xl/sharedStrings.xml')?.async('string'));
+  const original=zip.file(targets[0].path);if(!original)throw new Error('Das erste Tabellenblatt der Vorlage fehlt.');
+  zip.file(targets[0].path,fillTemplateSheet(parseXml(await original.async('string')),shared,report));
+  // Only cell contents in the original first sheet are changed; its layout, tabs and styles remain untouched.
   return zip.generateAsync({type:'nodebuffer',compression:'DEFLATE'});
 }
