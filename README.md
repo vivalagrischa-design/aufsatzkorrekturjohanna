@@ -39,7 +39,7 @@ benötigt macOS; auf anderen Servern Text manuell einfügen oder OCR ergänzen.
 
 # Aufsatzatelier – Deutschkorrektur für Schulen
 
-Zwei Uploadfelder: Bewertungskriterien und Schüleraufsatz. Die App erstellt anhand der hochgeladenen Bewertungskriterien einen Korrekturvorschlag mit Textbelegen, begründeten Sprachkorrekturen, Stärken, Lernschritten und vollständig sprachlich korrigiertem Aufsatz. Download als Word-Datei, HTML-Bericht oder PDF über den Druckdialog.
+Zwei Uploadfelder: Bewertungskriterien und Schüleraufsatz. Die App erstellt anhand der hochgeladenen Bewertungskriterien einen Korrekturvorschlag mit Textbelegen, begründeten Sprachkorrekturen, Stärken, Lernschritten und vollständig sprachlich korrigiertem Aufsatz. Unterstützte Uploads sind PDF, Word, Excel, TXT und Bilder. Neben den beiden Word-Berichten kann bei einer hochgeladenen XLSX-Datei eine Beurteilungs-Tabelle als zusätzliches Tabellenblatt in derselben Excel-Arbeitsmappe heruntergeladen werden; vorhandene Tabellenblätter bleiben erhalten.
 
 **Standard: echte lokale KI ohne API-Schlüssel.** Lehrpersonen brauchen nur die Webadresse und gegebenenfalls das Schulpasswort. Der Betreiber stellt einmalig die App mit einem eigenen Ollama-KI-Server bereit. Es gibt keine vorgetäuschten Korrekturen.
 
@@ -142,10 +142,10 @@ Ohne Repository-Pfad und abschliessenden Slash. Lehrpersonen tragen diese techni
 
 ## Unterstützte Dateien und Ergebnis
 
-- Je ein PDF, DOCX, TXT, JPG, PNG oder WebP bis 8 MB pro Uploadfeld.
+- Je ein PDF, DOCX, XLSX, TXT, JPG, PNG oder WebP bis 8 MB pro Uploadfeld.
 - Mehrere Seiten als ein PDF; lokale PDF-Verarbeitung maximal 12 Seiten pro Datei.
 - PDF-Seiten werden als Text und Bild gelesen, damit auch Scans, Handschrift und Rastertabellen verfügbar sind.
-- Word wird als Text gelesen. Eingebettete Scans und Bilder in Word zuerst als PDF exportieren.
+- Word wird als Text gelesen. Excel-Arbeitsmappen werden tabellenblattweise ausgelesen. Eingebettete Scans und Bilder in Word zuerst als PDF exportieren.
 - Zusatzangaben wie Aufgabenstellung und Klassenstufe optional. Schweizer Rechtschreibung ist voreingestellt.
 - Punkte nur nach expliziter Skala; Note nur nach eindeutigem Notenschlüssel im Raster. Unklare oder unlesbare Angaben werden ausgewiesen.
 - Word-Download enthält Gesamtbeurteilung, Kriterien, Korrekturen, Stärken, Lernschritte, Unsicherheiten sowie korrigierten Text und Originaltranskription.
@@ -155,7 +155,7 @@ Ohne Repository-Pfad und abschliessenden Slash. Lehrpersonen tragen diese techni
 
 In der Standardkonfiguration werden die Dokumente ausschliesslich an den vom Betreiber eingerichteten Ollama-Server gesendet. Kein OpenAI-Konto und kein externer API-Schlüssel nötig. Ollama soll lokal oder auf einem kontrollierten Schulserver betrieben werden, nicht über einen Cloud-Modellnamen.
 
-PDFs werden zur Verarbeitung kurz in einem privaten temporären Ordner abgelegt und anschliessend gelöscht. Es gibt keine Aufsatzdatenbank oder dauerhafte Uploadablage. DOCX und TXT werden im Arbeitsspeicher verarbeitet. App und KI-Server befinden sich im Verantwortungsbereich des Betreibers; Backups, Betriebssystem und vorgeschaltete Dienste können eigene Aufbewahrungsregeln haben.
+PDFs werden zur Verarbeitung kurz in einem privaten temporären Ordner abgelegt und anschliessend gelöscht. Es gibt keine Aufsatzdatenbank oder dauerhafte Uploadablage. DOCX, XLSX und TXT werden im Arbeitsspeicher verarbeitet. App und KI-Server befinden sich im Verantwortungsbereich des Betreibers; Backups, Betriebssystem und vorgeschaltete Dienste können eigene Aufbewahrungsregeln haben.
 
 Das Schulpasswort bleibt nur im Speicher der geöffneten Browserseite. Es wird nicht lokal gespeichert. Nach Neuladen erneut eingeben. Der technische Server-Link wird in der Betreiberkonfiguration festgelegt. Die Oberfläche lädt keine externen Schriftarten oder Analyseprogramme.
 

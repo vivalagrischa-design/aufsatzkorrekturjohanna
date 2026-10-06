@@ -6,6 +6,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { schema, instructions, fileContent, validateReport, wordReport, teacherWordReport, validateUploads, normalizeStrictness, strictnessGuides } from './correction.js';
 import { localCorrection } from './local-ai.js';
 import { extractFiles, fastCorrection, visionRead } from './fast-correction.js';
+import { excelReport } from './excel-support.js';
 
 const publicDir = new URL('./public/', import.meta.url);
 const safeEqual = (a, b) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
@@ -50,6 +51,10 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
           return send(200, await fastCorrection(body, env, fetchImpl, controller.signal));
         }
         if (url.pathname === '/api/export') {
+          if (body.kind === 'excel-report') {
+            const file=await excelReport(body.template,body.report);
+            res.writeHead(200,{ 'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="Beurteilung_Aufsatz.xlsx"' }); return res.end(file);
+          }
           const file = body.kind === 'teacher-report' ? await teacherWordReport(body.report) : body.template ? await templateReport(body.template, body.report) : await wordReport(body.report);
           res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'Content-Disposition': 'attachment; filename="Korrekturvorschlag.docx"' }); return res.end(file);
         }

@@ -9,6 +9,7 @@ import mammoth from 'mammoth';
 import { fileContent, uploadFiles, validateReport, schema, normalizeStrictness, strictnessGuides } from './correction.js';
 import { readOllamaResponse } from './local-ai.js';
 import { ollamaFetch } from './ollama-http.js';
+import { extractXlsx } from './excel-support.js';
 const run = promisify(execFile);
 const plain = html => html.replace(/<\/(?:p|li)>/g, ' ').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
 export function rubricFromHtml(html) {
@@ -42,6 +43,7 @@ export async function extractFiles(files, { ocr = macOCR, forceImages = false, s
       fileContent(file, 'Texterkennung');
       const ext = file.name.split('.').pop().toLowerCase(), bytes = Buffer.from(file.data, 'base64');
       if (ext === 'txt') { pages.push({ name: file.name, text: bytes.toString('utf8'), ocr: false, warnings: [] }); continue; }
+      if (ext === 'xlsx') { const extracted=await extractXlsx(file); pages.push(...extracted.pages); rubric.push(...extracted.rubric); continue; }
       if (ext === 'docx') {
         const text = (await mammoth.extractRawText({ buffer: bytes })).value;
         rubric.push(...rubricFromHtml((await mammoth.convertToHtml({ buffer: bytes })).value));

@@ -16,8 +16,8 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp
 function status(message, error = false) { $('status').hidden = false; $('status').textContent = message; $('status').classList.toggle('error', error); }
 function setFiles(id, files) {
   const additions = Array.from(files);
-  if (additions.some(file => !/\.(pdf|docx|txt|png|jpe?g|webp)$/i.test(file.name) || !file.size || file.size > 8 * 1024 * 1024)) {
-    status('Bitte PDF-, DOCX-, TXT- oder Bilddateien mit maximal 8 MB pro Datei auswählen.', true); return;
+  if (additions.some(file => !/\.(pdf|docx|xlsx|txt|png|jpe?g|webp)$/i.test(file.name) || !file.size || file.size > 8 * 1024 * 1024)) {
+    status('Bitte PDF-, DOCX-, XLSX-, TXT- oder Bilddateien mit maximal 8 MB pro Datei auswählen.', true); return;
   }
   const next = [...selected[id], ...additions];
   const total = next.reduce((sum, file) => sum + file.size, 0) + selected[id === 'criteria' ? 'essay' : 'criteria'].reduce((sum, file) => sum + file.size, 0);
@@ -28,6 +28,7 @@ function invalidateReport() { report = null; $('result').hidden = true; }
 function updateFile(id) {
   const files = selected[id];
   $(id + 'Name').textContent = files.length ? `${files.length} Datei${files.length === 1 ? '' : 'en'} ausgewählt · weitere hinzufügen` : (id === 'criteria' ? 'Bewertungskriterien hochladen' : 'Aufsatz hochladen');
+  if(id==='criteria') $('downloadExcel').hidden=!files.some(file=>/\.xlsx$/i.test(file.name));
   $(id + 'Zone').classList.toggle('ready', files.length > 0);
   document.querySelector(`[data-clear="${id}"]`).hidden = !files.length;
   const list = $(id + 'List'); list.replaceChildren();
@@ -188,4 +189,15 @@ $('downloadTeacherReport').onclick = async () => {
   try { const response = await request('/api/export', { kind: 'teacher-report', report }); download(await response.blob(), 'Bericht_Lehrperson.docx'); }
   catch (error) { status(error.message, true); }
   finally { $('downloadTeacherReport').disabled = false; }
+};
+$('downloadExcel').onclick = async () => {
+  if(!report) return;
+  const template=selected.criteria.find(file=>/\.xlsx$/i.test(file.name));
+  if(!template) return status('Bitte zuerst eine XLSX-Datei mit Bewertungskriterien hochladen.',true);
+  $('downloadExcel').disabled=true;
+  try {
+    const response=await request('/api/export',{kind:'excel-report',template:await readFile(template),report});
+    download(await response.blob(),template.name.replace(/\.xlsx$/i,'')+'_mit_Beurteilung.xlsx');
+  } catch(error) { status(error.message,true); }
+  finally { $('downloadExcel').disabled=false; }
 };

@@ -40,17 +40,18 @@ Mehrere Dateien eines Uploadfelds gehören zu EINEM Dokument. Verbinde sämtlich
 Liste konkrete sprachliche Korrekturen mit originalgetreuem Zitat, Vorschlag, Kategorie und kurzer Begründung. Unterscheide Rechtschreibung, Grammatik, Zeichensetzung und optionale Stilverbesserungen. Inhaltliche Verbesserungsvorschläge gehören in next_steps, nicht als neue Inhalte in den korrigierten Text.
 Schreibe wertschätzendes, konkretes Feedback an den Schüler/die Schülerin mit Stärken und nächsten Lernschritten. Die Lehrperson entscheidet abschliessend. Bei fachfremden, leeren oder vollständig unlesbaren Dokumenten gib keine erfundene Korrektur aus: leere Kriterien/Korrekturen/Texte, grade null und eine klare Erklärung in uncertainties und summary.`;
 
-const types = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+const types = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 export function fileContent(file, label) {
   if (!file || typeof file.name !== 'string' || typeof file.data !== 'string') throw new Error(`${label}: Datei fehlt.`);
   const ext = file.name.split('.').pop().toLowerCase();
   const mime = types[ext];
-  if (!mime) throw new Error(`${label}: Bitte PDF, DOCX, TXT, JPG, PNG oder WebP verwenden.`);
+  if (!mime) throw new Error(`${label}: Bitte PDF, DOCX, XLSX, TXT, JPG, PNG oder WebP verwenden.`);
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(file.data) || file.data.length % 4 !== 0) throw new Error(`${label}: Ungültige Datei.`);
   const bytes = Buffer.from(file.data, 'base64');
   if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error(`${label}: Die Datei muss zwischen 1 Byte und 8 MB gross sein.`);
   if (ext === 'pdf' && !bytes.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new Error(`${label}: Ungültiges PDF.`);
   if (ext === 'docx' && bytes.subarray(0, 2).toString() !== 'PK') throw new Error(`${label}: Ungültige Word-Datei.`);
+  if (ext === 'xlsx' && bytes.subarray(0, 2).toString() !== 'PK') throw new Error(`${label}: Ungültige Excel-Datei.`);
   if (mime.startsWith('image/')) return { type: 'input_image', image_url: `data:${mime};base64,${file.data}`, detail: 'high' };
   if (ext === 'txt') return { type: 'input_text', text: `${label} (${file.name.slice(0, 160)}):\n${bytes.toString('utf8')}` };
   return { type: 'input_file', filename: file.name.slice(0, 160), file_data: `data:${mime};base64,${file.data}` };
