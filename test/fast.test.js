@@ -43,6 +43,11 @@ test('Fabricated evidence or correction cannot be returned',async()=>{
  await assert.rejects(fastCorrection(body,{},mocked({...value,criteria:[{...value.criteria[0],evidence:'erfunden'}]})),/Textbeleg/);
  await assert.rejects(fastCorrection(body,{},mocked({...value,corrections:[{...value.corrections[0],original:'erfunden'}]})),/Original/);
 });
+test('Evidence comparison tolerates OCR punctuation, line breaks and capitalization',async()=>{
+ const tolerant={...value,criteria:[{...value.criteria[0],evidence:'DAS,\nTIERE!'}],corrections:[{...value.corrections[0],original:'DAS, TIERE'}]};
+ const result=await fastCorrection(body,{},mocked(tolerant));
+ assert.equal(result.report.criteria[0].evidence,'DAS,\nTIERE!');
+});
 test('Missing criteria and excessive points are rejected',async()=>{
  await assert.rejects(fastCorrection(body,{},mocked({...value,criteria:[]})),/Rasterkriterien/);
  await assert.rejects(fastCorrection(body,{},mocked({...value,criteria:[{...value.criteria[0],earned:4}]})),/Unplausible/);

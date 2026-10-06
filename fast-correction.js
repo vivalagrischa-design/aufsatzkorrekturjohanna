@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mammoth from 'mammoth';
-import { fileContent, uploadFiles, validateReport, schema, normalizeStrictness, strictnessGuides } from './correction.js';
+import { fileContent, uploadFiles, validateReport, hasTextEvidence, schema, normalizeStrictness, strictnessGuides } from './correction.js';
 import { readOllamaResponse } from './local-ai.js';
 import { ollamaFetch } from './ollama-http.js';
 import { extractXlsx } from './excel-support.js';
@@ -147,11 +147,11 @@ export async function fastCorrection(body, env, fetchImpl = fetch, signal) {
   value.criteria=value.criteria.map(c=>{
     const row=rubric[c.id];
     if (!row) throw new Error('Das Modell hat ein fremdes Kriterium bewertet.');
-    if (c.evidence && !body.essayText.includes(c.evidence)) throw new Error('Ein Textbeleg stimmt nicht mit dem geprüften Aufsatz überein. Beurteilung verworfen.');
+    if (c.evidence && !hasTextEvidence(body.essayText,c.evidence)) throw new Error('Ein KI-Textbeleg liess sich im geprüften Aufsatz nicht bestätigen. Zum Schutz vor erfundenen Zitaten wurde die Bewertung nicht übernommen. Bitte den eingelesenen Text prüfen und erneut starten.');
     return {name:row.name,maximum:c.earned===null || row.maximum===null?null:row.maximum,earned:row.maximum===null?null:c.earned,assessment:c.assessment,evidence:c.evidence};
   });
   value.criteria.sort((a,b)=>rubric.findIndex(r=>r.name===a.name)-rubric.findIndex(r=>r.name===b.name));
-  if (!Array.isArray(value.corrections) || value.corrections.some(c=>!c.original || !body.essayText.includes(c.original))) throw new Error('Eine Korrekturstelle ist im Original nicht vorhanden. Beurteilung verworfen.');
+  if (!Array.isArray(value.corrections) || value.corrections.some(c=>!c.original || !hasTextEvidence(body.essayText,c.original))) throw new Error('Eine Korrekturstelle liess sich im Originaltext nicht bestätigen. Bitte den eingelesenen Text prüfen und erneut starten.');
   const report=validateReport({...value,original_text:body.essayText,corrected_text:'',grade:null,grade_reason:'Schneller Modus: Punkte nach dem geprüften Raster; keine automatische Note. Sprachliche Korrekturen sind eine Auswahl. Kein vollständiger überarbeiteter Aufsatz.'});
   return {report,metrics:{model,seconds:(performance.now()-started)/1000,tokens:data.eval_count||null,tokensPerSecond:data.eval_duration?data.eval_count/(data.eval_duration/1e9):null}};
 }

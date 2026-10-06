@@ -71,6 +71,19 @@ export function validateUploads(body) {
   return { criteria, essay };
 }
 
+// Compare quoted evidence by its actual words, allowing harmless OCR/layout
+// differences such as capitalization, punctuation, or line breaks.
+export function hasTextEvidence(text, evidence) {
+  const tokens = value => String(value || '').normalize('NFKC').toLocaleLowerCase('de').replace(/ß/g, 'ss').match(/[\p{L}\p{N}]+/gu) || [];
+  const source = tokens(text), quote = tokens(evidence);
+  if (!quote.length || quote.length > source.length) return false;
+  outer: for (let i = 0; i <= source.length - quote.length; i++) {
+    for (let j = 0; j < quote.length; j++) if (source[i + j] !== quote[j]) continue outer;
+    return true;
+  }
+  return false;
+}
+
 export function validateReport(value) {
   function check(v, s) {
     if (Array.isArray(s.type)) return v === null || (typeof v === 'number' && Number.isFinite(v));
@@ -84,7 +97,7 @@ export function validateReport(value) {
   const readable = value.original_text.replace(/\[unleserlich\]/gi, ' ').match(/[\p{L}]{3,}/gu)?.length >= 5;
   if (readable && value.criteria.length) {
     if (value.strengths.length < 3 || value.strengths.length > 5 || value.weaknesses.length < 2 || value.weaknesses.length > 4 || value.next_steps.length < 2 || value.next_steps.length > 4) throw new Error('Der Bericht braucht 3–5 Stärken, 2–4 Entwicklungsfelder und 2–4 nächste Schritte.');
-    for (const item of [...value.strengths, ...value.weaknesses]) if (!item.evidence || !value.original_text.includes(item.evidence)) throw new Error('Ein Beleg für Stärken oder Entwicklungsfelder stimmt nicht mit dem Aufsatz überein.');
+    for (const item of [...value.strengths, ...value.weaknesses]) if (!item.evidence || !hasTextEvidence(value.original_text, item.evidence)) throw new Error('Ein Beleg für Stärken oder Entwicklungsfelder stimmt nicht mit dem Aufsatz überein.');
   }
   for (const c of value.criteria) {
     if ((c.earned === null) !== (c.maximum === null) || (c.maximum !== null && (c.maximum <= 0 || c.earned < 0 || c.earned > c.maximum))) throw new Error('Unplausible Punkte im Vorschlag. Bitte erneut versuchen.');
