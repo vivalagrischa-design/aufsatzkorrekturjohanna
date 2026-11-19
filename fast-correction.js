@@ -143,15 +143,30 @@ export async function fastCorrection(body, env, fetchImpl = fetch, signal) {
   try {value=JSON.parse(data.message.content);} catch {throw new Error('Das Modell hat keine gültige Beurteilung geliefert.');}
   }
   if (!Array.isArray(value.criteria) || value.criteria.length!==rubric.length || new Set(value.criteria.map(x=>x.id)).size!==rubric.length) throw new Error('Nicht alle Rasterkriterien wurden eindeutig beurteilt.');
-  if (value.assessment_strictness !== assessmentStrictness) throw new Error('Die KI hat die gewählte Beurteilungsstrenge nicht übernommen. Beurteilung verworfen.');
+  // Nicht bestätigte Einzelteile werden entfernt und offen ausgewiesen, statt die ganze Beurteilung zu verwerfen.
+  // Erfundene Zitate erscheinen so nie im Bericht, und die Lehrperson muss nicht neu starten.
+  const notes = Array.isArray(value.uncertainties) ? value.uncertainties.filter(x => typeof x === 'string') : [];
+  if (value.assessment_strictness !== assessmentStrictness) { notes.push(`Die KI hat die gewählte Beurteilungsstrenge (${assessmentStrictness}/5) nicht bestätigt. Bitte die Punkte besonders kritisch prüfen.`); value.assessment_strictness = assessmentStrictness; }
   value.criteria=value.criteria.map(c=>{
     const row=rubric[c.id];
     if (!row) throw new Error('Das Modell hat ein fremdes Kriterium bewertet.');
-    if (c.evidence && !hasTextEvidence(body.essayText,c.evidence)) throw new Error('Ein KI-Textbeleg liess sich im geprüften Aufsatz nicht bestätigen. Zum Schutz vor erfundenen Zitaten wurde die Bewertung nicht übernommen. Bitte den eingelesenen Text prüfen und erneut starten.');
-    return {name:row.name,maximum:c.earned===null || row.maximum===null?null:row.maximum,earned:row.maximum===null?null:c.earned,assessment:c.assessment,evidence:c.evidence};
+    let evidence=c.evidence;
+    if (evidence && !hasTextEvidence(body.essayText,evidence)) { notes.push(`Kriterium «${row.name}»: Der Textbeleg der KI liess sich im Aufsatz nicht bestätigen und wurde entfernt. Bitte diese Beurteilung besonders prüfen.`); evidence=''; }
+    return {name:row.name,maximum:c.earned===null || row.maximum===null?null:row.maximum,earned:row.maximum===null?null:c.earned,assessment:c.assessment,evidence};
   });
   value.criteria.sort((a,b)=>rubric.findIndex(r=>r.name===a.name)-rubric.findIndex(r=>r.name===b.name));
-  if (!Array.isArray(value.corrections) || value.corrections.some(c=>!c.original || !hasTextEvidence(body.essayText,c.original))) throw new Error('Eine Korrekturstelle liess sich im Originaltext nicht bestätigen. Bitte den eingelesenen Text prüfen und erneut starten.');
+  if (!Array.isArray(value.corrections)) throw new Error('Das Modell hat keine gültigen Korrekturstellen geliefert. Bitte erneut starten.');
+  const allCorrections=value.corrections.length;
+  value.corrections=value.corrections.filter(c=>c && c.original && hasTextEvidence(body.essayText,c.original));
+  if (value.corrections.length<allCorrections) notes.push(`${allCorrections-value.corrections.length} Korrekturstelle(n) der KI liessen sich im Aufsatz nicht finden und wurden weggelassen.`);
+  for (const [key,label,max] of [['strengths','Stärke',5],['weaknesses','Entwicklungsfeld',4]]) {
+    if (!Array.isArray(value[key])) continue;
+    const before=value[key].length;
+    value[key]=value[key].filter(item=>item && item.evidence && hasTextEvidence(body.essayText,item.evidence)).slice(0,max);
+    if (value[key].length<Math.min(before,max)) notes.push(`Mindestens ein(e) ${label} der KI hatte keinen bestätigten Textbeleg und wurde weggelassen.`);
+  }
+  if (Array.isArray(value.next_steps)) value.next_steps=value.next_steps.slice(0,4);
+  value.uncertainties=notes;
   const report=validateReport({...value,original_text:body.essayText,corrected_text:'',grade:null,grade_reason:'Schneller Modus: Punkte nach dem geprüften Raster; keine automatische Note. Sprachliche Korrekturen sind eine Auswahl. Kein vollständiger überarbeiteter Aufsatz.'});
   return {report,metrics:{model,seconds:(performance.now()-started)/1000,tokens:data.eval_count||null,tokensPerSecond:data.eval_duration?data.eval_count/(data.eval_duration/1e9):null}};
 }

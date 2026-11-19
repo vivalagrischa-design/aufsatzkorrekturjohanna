@@ -96,7 +96,8 @@ export function validateReport(value) {
   if (value.assessment_strictness < 1 || value.assessment_strictness > 5) throw new Error('Die angegebene Beurteilungsstrenge ist ungültig.');
   const readable = value.original_text.replace(/\[unleserlich\]/gi, ' ').match(/[\p{L}]{3,}/gu)?.length >= 5;
   if (readable && value.criteria.length) {
-    if (value.strengths.length < 3 || value.strengths.length > 5 || value.weaknesses.length < 2 || value.weaknesses.length > 4 || value.next_steps.length < 2 || value.next_steps.length > 4) throw new Error('Der Bericht braucht 3–5 Stärken, 2–4 Entwicklungsfelder und 2–4 nächste Schritte.');
+    // Obergrenzen bleiben verbindlich. Fehlen nach dem Entfernen unbestätigter Belege einzelne Punkte, bleibt der Bericht gültig.
+    if (value.strengths.length > 5 || value.weaknesses.length > 4 || value.next_steps.length > 4) throw new Error('Der Bericht darf höchstens 5 Stärken, 4 Entwicklungsfelder und 4 nächste Schritte enthalten.');
     for (const item of [...value.strengths, ...value.weaknesses]) if (!item.evidence || !hasTextEvidence(value.original_text, item.evidence)) throw new Error('Ein Beleg für Stärken oder Entwicklungsfelder stimmt nicht mit dem Aufsatz überein.');
   }
   for (const c of value.criteria) {
