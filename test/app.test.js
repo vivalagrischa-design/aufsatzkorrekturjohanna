@@ -180,3 +180,14 @@ test('Optional cloud provider also receives every selected file in order', async
     assert.match(content[5].text, /Zweite Seite/);
   });
 });
+test('Wrong passwords are locked out and extraction is rate limited', async () => {
+  await withApp({ env: { AI_PROVIDER: 'openai', APP_PASSWORD: 'teacher', OPENAI_API_KEY: 'x', RATE_LIMIT_PER_HOUR: '2' } }, async url => {
+    const post = (path, pw, body = '{}') => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pw}` }, body });
+    for (let i = 0; i < 10; i++) assert.equal((await post('/api/auth-check', 'falsch')).status, 401);
+    assert.equal((await post('/api/auth-check', 'teacher')).status, 429);
+  });
+  await withApp({ env: { AI_PROVIDER: 'openai', APP_PASSWORD: 'teacher', OPENAI_API_KEY: 'x', RATE_LIMIT_PER_HOUR: '2' } }, async url => {
+    const post = () => fetch(url + '/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer teacher' }, body: JSON.stringify({ files: [{ name: 'a.txt', data: Buffer.from('Hallo').toString('base64') }] }) });
+    assert.equal((await post()).status, 200); assert.equal((await post()).status, 200); assert.equal((await post()).status, 429);
+  });
+});

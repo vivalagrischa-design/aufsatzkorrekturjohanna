@@ -12,6 +12,12 @@ function updateStrictness() {
 updateStrictness();
 $('assessmentStrictness').addEventListener('input', () => { updateStrictness(); invalidateReport(); });
 const apiUrl = (window.AUFSATZ_CONFIG?.serverUrl || '').replace(/\/+$/, '');
+// Mac-Texterkennung nur anbieten, wenn der Server sie auch nutzen kann (nicht im OpenAI-Betrieb).
+fetch(`${apiUrl}/api/health`, { signal: AbortSignal.timeout(10000) }).then(r => r.ok ? r.json() : null).then(info => {
+  if (info?.provider !== 'openai') return;
+  const option = document.querySelector('#readingMode option[value="ocr"]'); if (option) option.remove();
+  $('readingMode').value = 'vision';
+}).catch(() => {});
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function status(message, error = false) { $('status').hidden = false; $('status').textContent = message; $('status').classList.toggle('error', error); }
 function setFiles(id, files) {

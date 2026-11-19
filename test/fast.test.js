@@ -40,8 +40,14 @@ test('Strictness is applied to the prompt, accepted only for levels 1–5, and r
 });
 test('Unreviewed OCR cannot be assessed',async()=>{await assert.rejects(fastCorrection({...body,reviewed:false},{},mocked(value)),/zuerst prüfen/);});
 test('Fabricated evidence or correction cannot be returned',async()=>{
- await assert.rejects(fastCorrection(body,{},mocked({...value,criteria:[{...value.criteria[0],evidence:'erfunden'}]})),/Textbeleg/);
- await assert.rejects(fastCorrection(body,{},mocked({...value,corrections:[{...value.corrections[0],original:'erfunden'}]})),/Original/);
+ const a=await fastCorrection(body,{},mocked({...value,criteria:[{...value.criteria[0],evidence:'erfunden'}]}));
+ assert.equal(a.report.criteria[0].evidence,'');assert.ok(a.report.uncertainties.some(x=>/nicht bestätigen/.test(x)));assert.ok(!JSON.stringify(a.report).includes('erfunden'));
+ const b=await fastCorrection(body,{},mocked({...value,corrections:[{...value.corrections[0],original:'erfunden'}]}));
+ assert.equal(b.report.corrections.length,0);assert.ok(b.report.uncertainties.some(x=>/weggelassen/.test(x)));assert.ok(!JSON.stringify(b.report).includes('erfunden'));
+});
+test('Unconfirmed strengths are dropped and a wrong strictness is flagged instead of rejected',async()=>{
+ const r=await fastCorrection(body,{},mocked({...value,assessment_strictness:4,strengths:[...value.strengths.slice(0,2),{area:'Stil',aspect:'Erfunden.',evidence:'kommt nicht vor'}]}));
+ assert.equal(r.report.assessment_strictness,3);assert.equal(r.report.strengths.length,2);assert.ok(r.report.uncertainties.some(x=>/strenge/i.test(x)));assert.ok(r.report.uncertainties.some(x=>/Stärke/.test(x)));
 });
 test('Evidence comparison tolerates OCR punctuation, line breaks and capitalization',async()=>{
  const tolerant={...value,criteria:[{...value.criteria[0],evidence:'DAS,\nTIERE!'}],corrections:[{...value.corrections[0],original:'DAS, TIERE'}]};

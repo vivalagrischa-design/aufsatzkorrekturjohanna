@@ -17,6 +17,11 @@ async function readBody(req) {
 }
 export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
   const rate = new Map();
+  // Kostenbremse für Einlesen und Beurteilen sowie Sperre nach wiederholt falschem Schulpasswort.
+  const hourly = Number(env.RATE_LIMIT_PER_HOUR) > 0 ? Number(env.RATE_LIMIT_PER_HOUR) : 60;
+  const usage = new Map(), failures = new Map();
+  const clientId = req => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unbekannt';
+  const recent = (map, key, windowMs) => { const now = Date.now(), list = (map.get(key) || []).filter(t => now - t < windowMs); map.set(key, list); return list; };
   return http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -35,7 +40,14 @@ export function createApp({ env = process.env, fetchImpl = fetch } = {}) {
         if (req.method !== 'POST') return send(405, { error: 'POST erforderlich.' });
         const configuredPassword=(env.APP_PASSWORD||'').trim();
         if (env.NODE_ENV === 'production' && !configuredPassword) return send(503, { error: 'Bitte am Server APP_PASSWORD einrichten.' });
-        if (configuredPassword && !safeEqual(req.headers.authorization || '', `Bearer ${configuredPassword}`)) return send(401, { error: 'Das App-Passwort fehlt oder stimmt nicht.' });
+        const who = clientId(req);
+        if (configuredPassword && recent(failures, who, 900000).length >= 10) return send(429, { error: 'Zu viele falsche Passwort-Versuche. Bitte in 15 Minuten erneut versuchen.' });
+        if (configuredPassword && !safeEqual(req.headers.authorization || '', `Bearer ${configuredPassword}`)) { recent(failures, who, 900000).push(Date.now()); return send(401, { error: 'Das App-Passwort fehlt oder stimmt nicht.' }); }
+        if (url.pathname === '/api/extract' || url.pathname === '/api/assess') {
+          const used = recent(usage, `${url.pathname}|${who}`, 3600000);
+          if (used.length >= hourly) return send(429, { error: `Maximal ${hourly} Anfragen pro Stunde für diese Funktion. Bitte später erneut versuchen.` });
+          used.push(Date.now());
+        }
         if (!['/api/correct', '/api/export', '/api/extract', '/api/assess', '/api/auth-check'].includes(url.pathname)) return send(404, { error: 'Unbekannte Funktion.' });
         if (!(req.headers['content-type'] || '').startsWith('application/json')) return send(415, { error: 'JSON erforderlich.' });
         const body = await readBody(req);
